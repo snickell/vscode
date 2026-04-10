@@ -9,6 +9,17 @@ import { SettingsDocument } from './settingsDocumentHelper';
 import { provideInstalledExtensionProposals } from './extensionsProposals';
 import './importExportProfiles';
 
+const settingsSelector: vscode.DocumentSelector = [
+	{ language: 'jsonc', pattern: '**/settings.json' },
+	{ language: 'jsonc', pattern: '**/settings.local.json' },
+];
+
+const workspaceConfigurationSelector: vscode.DocumentSelector = [
+	{ language: 'jsonc', pattern: '**/*.code-workspace' },
+	{ language: 'jsonc', pattern: '**/*.code-workspace.local' },
+	{ language: 'jsonc', pattern: '**/workspace.json.local' },
+];
+
 export function activate(context: vscode.ExtensionContext): void {
 	//settings.json suggestions
 	context.subscriptions.push(registerSettingsCompletions());
@@ -17,32 +28,32 @@ export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(...registerExtensionsCompletions());
 
 	// launch.json variable suggestions
-	context.subscriptions.push(registerVariableCompletions('**/launch.json'));
+	context.subscriptions.push(registerVariableCompletions({ language: 'jsonc', pattern: '**/launch.json' }));
 
 	// task.json variable suggestions
-	context.subscriptions.push(registerVariableCompletions('**/tasks.json'));
+	context.subscriptions.push(registerVariableCompletions({ language: 'jsonc', pattern: '**/tasks.json' }));
 
 	// Workspace file launch/tasks variable completions
-	context.subscriptions.push(registerVariableCompletions('**/*.code-workspace'));
+	context.subscriptions.push(registerVariableCompletions(workspaceConfigurationSelector));
 
 	// keybindings.json/package.json context key suggestions
 	context.subscriptions.push(registerContextKeyCompletions());
 }
 
 function registerSettingsCompletions(): vscode.Disposable {
-	return vscode.languages.registerCompletionItemProvider({ language: 'jsonc', pattern: '**/settings.json' }, {
+	return vscode.languages.registerCompletionItemProvider(settingsSelector, {
 		provideCompletionItems(document, position, token) {
 			return new SettingsDocument(document).provideCompletionItems(position, token);
 		}
 	});
 }
 
-function registerVariableCompletions(pattern: string): vscode.Disposable {
-	return vscode.languages.registerCompletionItemProvider({ language: 'jsonc', pattern }, {
+function registerVariableCompletions(selector: vscode.DocumentSelector): vscode.Disposable {
+	return vscode.languages.registerCompletionItemProvider(selector, {
 		provideCompletionItems(document, position, _token) {
 			const location = getLocation(document.getText(), document.offsetAt(position));
 			if (isCompletingInsidePropertyStringValue(document, location, position)) {
-				if (document.fileName.endsWith('.code-workspace') && !isLocationInsideTopLevelProperty(location, ['launch', 'tasks'])) {
+				if (isWorkspaceConfigurationDocument(document) && !isLocationInsideTopLevelProperty(location, ['launch', 'tasks'])) {
 					return [];
 				}
 
@@ -78,6 +89,10 @@ function registerVariableCompletions(pattern: string): vscode.Disposable {
 			return [];
 		}
 	});
+}
+
+function isWorkspaceConfigurationDocument(document: vscode.TextDocument): boolean {
+	return /\.(?:code-workspace(?:\.local)?)$/i.test(document.fileName) || /(?:^|[\\/])workspace\.json\.local$/i.test(document.fileName);
 }
 
 function isCompletingInsidePropertyStringValue(document: vscode.TextDocument, location: Location, pos: vscode.Position) {
@@ -119,7 +134,7 @@ function registerExtensionsCompletionsInExtensionsDocument(): vscode.Disposable 
 }
 
 function registerExtensionsCompletionsInWorkspaceConfigurationDocument(): vscode.Disposable {
-	return vscode.languages.registerCompletionItemProvider({ pattern: '**/*.code-workspace' }, {
+	return vscode.languages.registerCompletionItemProvider(workspaceConfigurationSelector, {
 		provideCompletionItems(document, position, _token) {
 			const location = getLocation(document.getText(), document.offsetAt(position));
 			if (location.path[0] === 'extensions' && location.path[1] === 'recommendations') {

@@ -35,7 +35,7 @@ export class SettingsEditorContribution extends Disposable {
 		this.currentRenderer = undefined;
 
 		const model = this.editor.getModel();
-		if (model && /\.(json|code-workspace)$/.test(model.uri.path)) {
+		if (model && /(?:\.json|\.code-workspace(?:\.local)?)$/.test(model.uri.path)) {
 			// Fast check: the preferences renderer can only appear
 			// in settings files or workspace files
 			const settingsModel = await this.preferencesService.createPreferencesEditorModel(model.uri);
@@ -43,6 +43,7 @@ export class SettingsEditorContribution extends Disposable {
 				this.disposables.add(settingsModel);
 				switch (settingsModel.configurationTarget) {
 					case ConfigurationTarget.WORKSPACE:
+					case ConfigurationTarget.WORKSPACE_LOCAL:
 						this.currentRenderer = this.disposables.add(this.instantiationService.createInstance(WorkspaceSettingsRenderer, this.editor, settingsModel));
 						break;
 					default:

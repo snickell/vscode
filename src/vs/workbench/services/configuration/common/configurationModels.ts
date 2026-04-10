@@ -106,8 +106,10 @@ export class Configuration extends BaseConfiguration {
 		folders: ResourceMap<ConfigurationModel>,
 		memoryConfiguration: ConfigurationModel,
 		memoryConfigurationByResource: ResourceMap<ConfigurationModel>,
-		private readonly _workspace?: Workspace) {
-		super(defaults, policy, application, localUser, remoteUser, workspaceConfiguration, folders, memoryConfiguration, memoryConfigurationByResource);
+		private readonly _workspace?: Workspace,
+		workspaceLocalConfiguration: ConfigurationModel = new ConfigurationModel(),
+		folderLocalConfigurations: ResourceMap<ConfigurationModel> = new ResourceMap<ConfigurationModel>()) {
+		super(defaults, policy, application, localUser, remoteUser, workspaceConfiguration, folders, memoryConfiguration, memoryConfigurationByResource, workspaceLocalConfiguration, folderLocalConfigurations);
 	}
 
 	override getValue(key: string | undefined, overrides: IConfigurationOverrides = {}): any {
@@ -133,6 +135,14 @@ export class Configuration extends BaseConfiguration {
 			return { keys: [], overrides: [] };
 		}
 		return super.compareAndDeleteFolderConfiguration(folder);
+	}
+
+	override compareAndDeleteFolderLocalConfiguration(folder: URI): IConfigurationChange {
+		if (this._workspace && this._workspace.folders.length > 0 && this._workspace.folders[0].uri.toString() === folder.toString()) {
+			// Do not remove workspace local configuration
+			return { keys: [], overrides: [] };
+		}
+		return super.compareAndDeleteFolderLocalConfiguration(folder);
 	}
 
 	compare(other: Configuration): IConfigurationChange {

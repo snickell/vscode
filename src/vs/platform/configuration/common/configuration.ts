@@ -39,7 +39,9 @@ export const enum ConfigurationTarget {
 	USER_LOCAL,
 	USER_REMOTE,
 	WORKSPACE,
+	WORKSPACE_LOCAL,
 	WORKSPACE_FOLDER,
+	WORKSPACE_FOLDER_LOCAL,
 	DEFAULT,
 	MEMORY
 }
@@ -50,7 +52,9 @@ export function ConfigurationTargetToString(configurationTarget: ConfigurationTa
 		case ConfigurationTarget.USER_LOCAL: return 'USER_LOCAL';
 		case ConfigurationTarget.USER_REMOTE: return 'USER_REMOTE';
 		case ConfigurationTarget.WORKSPACE: return 'WORKSPACE';
+		case ConfigurationTarget.WORKSPACE_LOCAL: return 'WORKSPACE_LOCAL';
 		case ConfigurationTarget.WORKSPACE_FOLDER: return 'WORKSPACE_FOLDER';
+		case ConfigurationTarget.WORKSPACE_FOLDER_LOCAL: return 'WORKSPACE_FOLDER_LOCAL';
 		case ConfigurationTarget.DEFAULT: return 'DEFAULT';
 		case ConfigurationTarget.MEMORY: return 'MEMORY';
 	}
@@ -81,7 +85,9 @@ export interface IConfigurationValue<T> {
 	readonly userLocalValue?: T;
 	readonly userRemoteValue?: T;
 	readonly workspaceValue?: T;
+	readonly workspaceLocalValue?: T;
 	readonly workspaceFolderValue?: T;
+	readonly workspaceFolderLocalValue?: T;
 	readonly memoryValue?: T;
 	readonly policyValue?: T;
 	readonly value?: T;
@@ -92,7 +98,9 @@ export interface IConfigurationValue<T> {
 	readonly userLocal?: { value?: T; override?: T };
 	readonly userRemote?: { value?: T; override?: T };
 	readonly workspace?: { value?: T; override?: T };
+	readonly workspaceLocal?: { value?: T; override?: T };
 	readonly workspaceFolder?: { value?: T; override?: T };
+	readonly workspaceFolderLocal?: { value?: T; override?: T };
 	readonly memory?: { value?: T; override?: T };
 	readonly policy?: { value?: T };
 
@@ -105,7 +113,9 @@ export function isConfigured<T>(configValue: IConfigurationValue<T>): configValu
 		configValue.userLocalValue !== undefined ||
 		configValue.userRemoteValue !== undefined ||
 		configValue.workspaceValue !== undefined ||
-		configValue.workspaceFolderValue !== undefined;
+		configValue.workspaceLocalValue !== undefined ||
+		configValue.workspaceFolderValue !== undefined ||
+		configValue.workspaceFolderLocalValue !== undefined;
 }
 
 export interface IConfigurationUpdateOptions {
@@ -193,7 +203,9 @@ export interface IConfigurationData {
 	application: IConfigurationModel;
 	user: IConfigurationModel;
 	workspace: IConfigurationModel;
+	workspaceLocal: IConfigurationModel;
 	folders: [UriComponents, IConfigurationModel][];
+	foldersLocal: [UriComponents, IConfigurationModel][];
 }
 
 export interface IConfigurationCompareResult {

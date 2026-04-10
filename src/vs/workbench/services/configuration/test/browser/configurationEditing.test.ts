@@ -15,7 +15,7 @@ import * as uuid from 'vs/base/common/uuid';
 import { IConfigurationRegistry, Extensions as ConfigurationExtensions } from 'vs/platform/configuration/common/configurationRegistry';
 import { WorkspaceService } from 'vs/workbench/services/configuration/browser/configurationService';
 import { ConfigurationEditing, ConfigurationEditingErrorCode, EditableConfigurationTarget } from 'vs/workbench/services/configuration/common/configurationEditing';
-import { WORKSPACE_STANDALONE_CONFIGURATIONS, FOLDER_SETTINGS_PATH, USER_STANDALONE_CONFIGURATIONS, IConfigurationCache } from 'vs/workbench/services/configuration/common/configuration';
+import { WORKSPACE_STANDALONE_CONFIGURATIONS, FOLDER_LOCAL_SETTINGS_PATH, FOLDER_SETTINGS_PATH, USER_STANDALONE_CONFIGURATIONS, IConfigurationCache } from 'vs/workbench/services/configuration/common/configuration';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { TestInstantiationService } from 'vs/platform/instantiation/test/common/instantiationServiceMock';
 import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
@@ -292,6 +292,15 @@ suite('ConfigurationEditing', () => {
 		const contents = await fileService.readFile(folderSettingsFile);
 		const parsed = json.parse(contents.value.toString());
 		assert.deepStrictEqual(parsed[key], value);
+	});
+
+	test('write one setting - local workspace file', async () => {
+		const target = joinPath(workspaceService.getWorkspace().folders[0].uri, FOLDER_LOCAL_SETTINGS_PATH);
+		await testObject.writeConfiguration(EditableConfigurationTarget.WORKSPACE_LOCAL, { key: 'configurationEditing.service.testSetting', value: 'value' });
+
+		const contents = await fileService.readFile(target);
+		const parsed = json.parse(contents.value.toString());
+		assert.strictEqual(parsed['configurationEditing.service.testSetting'], 'value');
 	});
 
 	test('write workspace standalone setting - empty file', async () => {

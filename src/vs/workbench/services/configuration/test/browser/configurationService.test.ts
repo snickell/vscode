@@ -28,7 +28,7 @@ import { IRemoteAgentService } from 'vs/workbench/services/remote/common/remoteA
 import { FileService } from 'vs/platform/files/common/fileService';
 import { NullLogService } from 'vs/platform/log/common/log';
 import { IRemoteAgentEnvironment } from 'vs/platform/remote/common/remoteAgentEnvironment';
-import { IConfigurationCache } from 'vs/workbench/services/configuration/common/configuration';
+import { FOLDER_LOCAL_SETTINGS_PATH, getWorkspaceLocalConfigPath, IConfigurationCache } from 'vs/workbench/services/configuration/common/configuration';
 import { SignService } from 'vs/platform/sign/browser/signService';
 import { FileUserDataProvider } from 'vs/platform/userData/common/fileUserDataProvider';
 import { IKeybindingEditingService, KeybindingsEditingService } from 'vs/workbench/services/keybinding/common/keybindingEditing';
@@ -2125,6 +2125,38 @@ suite('WorkspaceConfigurationService-Multiroot', () => {
 		assert.strictEqual(actual.value, 'workspaceFolderValue');
 	}));
 
+	test('Local Workspace settings override workspace settings and ignore folders from the local workspace file', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const workspaceLocalResource = getWorkspaceLocalConfigPath(workspaceContextService.getWorkspace().configuration!);
+		await jsonEditingServce.write(workspaceContextService.getWorkspace().configuration!, [{ path: ['settings'], value: { 'configurationService.workspace.testResourceSetting': 'workspaceValue' } }], true);
+		await fileService.writeFile(workspaceLocalResource, VSBuffer.fromString(JSON.stringify({
+			folders: [{ path: joinPath(ROOT, 'c').path }],
+			settings: { 'configurationService.workspace.testResourceSetting': 'workspaceLocalValue' }
+		}, null, '\t')));
+
+		await testObject.reloadConfiguration();
+
+		const actual = testObject.inspect('configurationService.workspace.testResourceSetting', { resource: workspaceContextService.getWorkspace().folders[0].uri });
+		assert.strictEqual(workspaceContextService.getWorkspace().folders.length, 2);
+		assert.strictEqual(actual.workspaceValue, 'workspaceValue');
+		assert.strictEqual(actual.workspaceLocalValue, 'workspaceLocalValue');
+		assert.strictEqual(actual.workspaceFolderValue, undefined);
+		assert.strictEqual(actual.workspaceFolderLocalValue, undefined);
+		assert.strictEqual(actual.value, 'workspaceLocalValue');
+	}));
+
+	test('Local Folder settings override folder settings', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const folder = workspaceContextService.getWorkspace().folders[0];
+		await fileService.writeFile(folder.toResource('.vscode/settings.json'), VSBuffer.fromString('{ "configurationService.workspace.testResourceSetting": "workspaceFolderValue" }'));
+		await fileService.writeFile(folder.toResource(FOLDER_LOCAL_SETTINGS_PATH), VSBuffer.fromString('{ "configurationService.workspace.testResourceSetting": "workspaceFolderLocalValue" }'));
+
+		await testObject.reloadConfiguration();
+
+		const actual = testObject.inspect('configurationService.workspace.testResourceSetting', { resource: folder.uri });
+		assert.strictEqual(actual.workspaceFolderValue, 'workspaceFolderValue');
+		assert.strictEqual(actual.workspaceFolderLocalValue, 'workspaceFolderLocalValue');
+		assert.strictEqual(actual.value, 'workspaceFolderLocalValue');
+	}));
+
 	test('inspect restricted settings', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
 		testObject.updateWorkspaceTrust(false);
 		await jsonEditingServce.write((workspaceContextService.getWorkspace().configuration!), [{ path: ['settings'], value: { 'configurationService.workspace.testRestrictedSetting1': 'workspaceRestrictedValue' } }], true);
@@ -2314,6 +2346,17 @@ suite('WorkspaceConfigurationService-Multiroot', () => {
 		assert.ok(target.called);
 	}));
 
+	test('update Local Workspace settings', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const workspaceLocalResource = getWorkspaceLocalConfigPath(workspaceContextService.getWorkspace().configuration!);
+		await testObject.updateValue('configurationService.workspace.testResourceSetting', 'workspaceLocalValue', ConfigurationTarget.WORKSPACE_LOCAL);
+
+		assert.strictEqual(testObject.getValue('configurationService.workspace.testResourceSetting'), 'workspaceLocalValue');
+		assert.strictEqual(testObject.inspect('configurationService.workspace.testResourceSetting').workspaceLocalValue, 'workspaceLocalValue');
+
+		const contents = JSON.parse((await fileService.readFile(workspaceLocalResource)).value.toString());
+		assert.strictEqual(contents.settings['configurationService.workspace.testResourceSetting'], 'workspaceLocalValue');
+	}));
+
 	test('update application setting into workspace configuration in a workspace is not supported', () => {
 		return testObject.updateValue('configurationService.workspace.applicationSetting', 'workspaceValue', {}, ConfigurationTarget.WORKSPACE, { donotNotifyError: true })
 			.then(() => assert.fail('Should not be supported'), (e) => assert.strictEqual(e.code, ConfigurationEditingErrorCode.ERROR_INVALID_WORKSPACE_CONFIGURATION_APPLICATION));
@@ -2351,6 +2394,17 @@ suite('WorkspaceConfigurationService-Multiroot', () => {
 		testObject.onDidChangeConfiguration(target);
 		await testObject.updateValue('configurationService.workspace.testResourceSetting', 'workspaceFolderValue2', { resource: workspace.folders[0].uri }, ConfigurationTarget.WORKSPACE_FOLDER);
 		assert.ok(target.called);
+	}));
+
+	test('update Local Folder settings', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const workspace = workspaceContextService.getWorkspace();
+		await testObject.updateValue('configurationService.workspace.testResourceSetting', 'workspaceFolderLocalValue', { resource: workspace.folders[0].uri }, ConfigurationTarget.WORKSPACE_FOLDER_LOCAL);
+
+		assert.strictEqual(testObject.getValue('configurationService.workspace.testResourceSetting', { resource: workspace.folders[0].uri }), 'workspaceFolderLocalValue');
+		assert.strictEqual(testObject.inspect('configurationService.workspace.testResourceSetting', { resource: workspace.folders[0].uri }).workspaceFolderLocalValue, 'workspaceFolderLocalValue');
+
+		const contents = JSON.parse((await fileService.readFile(workspace.folders[0].toResource(FOLDER_LOCAL_SETTINGS_PATH))).value.toString());
+		assert.strictEqual(contents['configurationService.workspace.testResourceSetting'], 'workspaceFolderLocalValue');
 	}));
 
 	test('update machine overridable setting in folder', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {

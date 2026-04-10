@@ -20,7 +20,7 @@ import { KeyCode } from 'vs/base/common/keyCodes';
 import { Disposable, DisposableStore, dispose } from 'vs/base/common/lifecycle';
 import * as platform from 'vs/base/common/platform';
 import { withNullAsUndefined, withUndefinedAsNull } from 'vs/base/common/types';
-import { URI } from 'vs/base/common/uri';
+import { URI, UriComponents } from 'vs/base/common/uri';
 import 'vs/css!./media/settingsEditor2';
 import { localize } from 'vs/nls';
 import { ICommandService } from 'vs/platform/commands/common/commands';
@@ -37,7 +37,7 @@ import { IUserDataSyncEnablementService, IUserDataSyncService, SyncStatus } from
 import { EditorPane } from 'vs/workbench/browser/parts/editor/editorPane';
 import { IEditorMemento, IEditorOpenContext, IEditorPane } from 'vs/workbench/common/editor';
 import { SuggestEnabledInput } from 'vs/workbench/contrib/codeEditor/browser/suggestEnabledInput/suggestEnabledInput';
-import { SettingsTarget, SettingsTargetsWidget } from 'vs/workbench/contrib/preferences/browser/preferencesWidgets';
+import { isFolderSettingsTarget, SettingsTarget, SettingsTargetsWidget } from 'vs/workbench/contrib/preferences/browser/preferencesWidgets';
 import { getCommonlyUsedData, tocData } from 'vs/workbench/contrib/preferences/browser/settingsLayout';
 import { AbstractSettingRenderer, HeightChangeParams, ISettingLinkClickEvent, resolveConfiguredUntrustedSettings, createTocTreeForExtensionSettings, resolveSettingsTree, SettingsTree, SettingTreeRenderers } from 'vs/workbench/contrib/preferences/browser/settingsTree';
 import { ISettingsEditorViewState, parseQuery, SearchResultIdx, SearchResultModel, SettingsTreeElement, SettingsTreeGroupChild, SettingsTreeGroupElement, SettingsTreeModel, SettingsTreeSettingElement } from 'vs/workbench/contrib/preferences/browser/settingsTreeModels';
@@ -89,6 +89,25 @@ const $ = DOM.$;
 
 interface IFocusEventFromScroll extends KeyboardEvent {
 	fromScroll: true;
+}
+
+function reviveSettingsTarget(target: unknown): SettingsTarget | undefined {
+	if (target === undefined || target === null) {
+		return undefined;
+	}
+	if (isFolderSettingsTarget(target as SettingsTarget)) {
+		return target as SettingsTarget;
+	}
+	if (typeof target === 'object') {
+		const candidate = target as { readonly target?: ConfigurationTarget; readonly uri?: URI };
+		if (candidate.target === ConfigurationTarget.WORKSPACE_FOLDER || candidate.target === ConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
+			const uri = URI.revive(candidate.uri);
+			return uri ? { uri, target: candidate.target } : undefined;
+		}
+		const uri = URI.revive(target as UriComponents);
+		return uri ? { uri, target: ConfigurationTarget.WORKSPACE_FOLDER } : undefined;
+	}
+	return target as SettingsTarget;
 }
 
 const searchBoxLabel = localize('SearchSettings.AriaLabel', "Search settings");
@@ -380,12 +399,10 @@ export class SettingsEditor2 extends EditorPane {
 
 	private restoreCachedState(): ISettingsEditor2State | null {
 		const cachedState = this.group && this.input && this.editorMemento.loadEditorState(this.group, this.input);
-		if (cachedState && typeof cachedState.target === 'object') {
-			cachedState.target = URI.revive(cachedState.target);
-		}
 
 		if (cachedState) {
-			const settingsTarget = cachedState.target;
+			const settingsTarget = reviveSettingsTarget(cachedState.target) ?? ConfigurationTarget.USER_LOCAL;
+			cachedState.target = settingsTarget;
 			this.settingsTargetsWidget.settingsTarget = settingsTarget;
 			this.viewState.settingsTarget = settingsTarget;
 			this.searchWidget.setValue(cachedState.searchQuery);
@@ -425,7 +442,8 @@ export class SettingsEditor2 extends EditorPane {
 			this.viewState.query = query;
 		}
 
-		const target: SettingsTarget | undefined = options.folderUri ?? recoveredViewState?.settingsTarget ?? <SettingsTarget | undefined>options.target;
+		const target = reviveSettingsTarget(recoveredViewState?.settingsTarget)
+			?? (options.folderUri ? { uri: options.folderUri, target: options.target === ConfigurationTarget.WORKSPACE_FOLDER_LOCAL ? ConfigurationTarget.WORKSPACE_FOLDER_LOCAL : ConfigurationTarget.WORKSPACE_FOLDER } : <SettingsTarget | undefined>options.target);
 		if (target) {
 			this.settingsTargetsWidget.settingsTarget = target;
 			this.viewState.settingsTarget = target;
@@ -737,8 +755,13 @@ export class SettingsEditor2 extends EditorPane {
 			return this.preferencesService.openRemoteSettings(openOptions);
 		} else if (currentSettingsTarget === ConfigurationTarget.WORKSPACE) {
 			return this.preferencesService.openWorkspaceSettings(openOptions);
-		} else if (URI.isUri(currentSettingsTarget)) {
-			return this.preferencesService.openFolderSettings({ folderUri: currentSettingsTarget, ...openOptions });
+		} else if (currentSettingsTarget === ConfigurationTarget.WORKSPACE_LOCAL) {
+			return this.preferencesService.openWorkspaceLocalSettings(openOptions);
+		} else if (isFolderSettingsTarget(currentSettingsTarget)) {
+			if (currentSettingsTarget.target === ConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
+				return this.preferencesService.openFolderLocalSettings({ folderUri: currentSettingsTarget.uri, ...openOptions });
+			}
+			return this.preferencesService.openFolderSettings({ folderUri: currentSettingsTarget.uri, ...openOptions });
 		}
 
 		return undefined;
@@ -913,6 +936,18 @@ export class SettingsEditor2 extends EditorPane {
 
 			if (element.scope === 'workspace') {
 				this.settingsTargetsWidget.updateTarget(ConfigurationTarget.WORKSPACE);
+			} else if (element.scope === 'workspaceLocal') {
+				this.settingsTargetsWidget.updateTarget(ConfigurationTarget.WORKSPACE_LOCAL);
+			} else if (element.scope === 'workspaceFolder') {
+				const settingsTarget = this.settingsTargetsWidget.settingsTarget;
+				if (isFolderSettingsTarget(settingsTarget)) {
+					this.settingsTargetsWidget.updateTarget({ uri: settingsTarget.uri, target: ConfigurationTarget.WORKSPACE_FOLDER });
+				}
+			} else if (element.scope === 'workspaceFolderLocal') {
+				const settingsTarget = this.settingsTargetsWidget.settingsTarget;
+				if (isFolderSettingsTarget(settingsTarget)) {
+					this.settingsTargetsWidget.updateTarget({ uri: settingsTarget.uri, target: ConfigurationTarget.WORKSPACE_FOLDER_LOCAL });
+				}
 			} else if (element.scope === 'user') {
 				this.settingsTargetsWidget.updateTarget(ConfigurationTarget.USER_LOCAL);
 			} else if (element.scope === 'remote') {
@@ -1065,11 +1100,11 @@ export class SettingsEditor2 extends EditorPane {
 		// ConfigurationService displays the error if this fails.
 		// Force a render afterwards because onDidConfigurationUpdate doesn't fire if the update doesn't result in an effective setting value change.
 		const settingsTarget = this.settingsTargetsWidget.settingsTarget;
-		const resource = URI.isUri(settingsTarget) ? settingsTarget : undefined;
-		const configurationTarget = <ConfigurationTarget | null>(resource ? ConfigurationTarget.WORKSPACE_FOLDER : settingsTarget) ?? ConfigurationTarget.USER_LOCAL;
+		const resource = isFolderSettingsTarget(settingsTarget) ? settingsTarget.uri : undefined;
+		const configurationTarget = (isFolderSettingsTarget(settingsTarget) ? settingsTarget.target : settingsTarget) ?? ConfigurationTarget.USER_LOCAL;
 		const overrides: IConfigurationUpdateOverrides = { resource, overrideIdentifiers: languageFilter ? [languageFilter] : undefined };
 
-		const configurationTargetIsWorkspace = configurationTarget === ConfigurationTarget.WORKSPACE || configurationTarget === ConfigurationTarget.WORKSPACE_FOLDER;
+		const configurationTargetIsWorkspace = configurationTarget === ConfigurationTarget.WORKSPACE || configurationTarget === ConfigurationTarget.WORKSPACE_LOCAL || configurationTarget === ConfigurationTarget.WORKSPACE_FOLDER || configurationTarget === ConfigurationTarget.WORKSPACE_FOLDER_LOCAL;
 
 		const userPassedInManualReset = configurationTargetIsWorkspace || !!languageFilter;
 		const isManualReset = userPassedInManualReset ? manualReset : value === undefined;
@@ -1154,7 +1189,9 @@ export class SettingsEditor2 extends EditorPane {
 		const reportedTarget = props.settingsTarget === ConfigurationTarget.USER_LOCAL ? 'user' :
 			props.settingsTarget === ConfigurationTarget.USER_REMOTE ? 'user_remote' :
 				props.settingsTarget === ConfigurationTarget.WORKSPACE ? 'workspace' :
-					'folder';
+					props.settingsTarget === ConfigurationTarget.WORKSPACE_LOCAL ? 'workspace_local' :
+						isFolderSettingsTarget(props.settingsTarget) && props.settingsTarget.target === ConfigurationTarget.WORKSPACE_FOLDER_LOCAL ? 'folder_local' :
+							'folder';
 
 		const data = {
 			key: props.key,
@@ -1314,7 +1351,7 @@ export class SettingsEditor2 extends EditorPane {
 			this.defaultSettingsEditorModel.setAdditionalGroups(additionalGroups);
 		}
 
-		if (!this.workspaceTrustManagementService.isWorkspaceTrusted() && (this.viewState.settingsTarget instanceof URI || this.viewState.settingsTarget === ConfigurationTarget.WORKSPACE)) {
+		if (!this.workspaceTrustManagementService.isWorkspaceTrusted() && (isFolderSettingsTarget(this.viewState.settingsTarget) || this.viewState.settingsTarget === ConfigurationTarget.WORKSPACE || this.viewState.settingsTarget === ConfigurationTarget.WORKSPACE_LOCAL)) {
 			const configuredUntrustedWorkspaceSettings = resolveConfiguredUntrustedSettings(groups, this.viewState.settingsTarget, this.viewState.languageFilter, this.configurationService);
 			if (configuredUntrustedWorkspaceSettings.length) {
 				resolvedSettingsRoot.children!.unshift({

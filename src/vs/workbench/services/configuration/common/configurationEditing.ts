@@ -13,7 +13,7 @@ import { Registry } from 'vs/platform/registry/common/platform';
 import { IWorkspaceContextService, WorkbenchState } from 'vs/platform/workspace/common/workspace';
 import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
 import { IConfigurationService, IConfigurationUpdateOptions, IConfigurationUpdateOverrides } from 'vs/platform/configuration/common/configuration';
-import { FOLDER_SETTINGS_PATH, WORKSPACE_STANDALONE_CONFIGURATIONS, TASKS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, USER_STANDALONE_CONFIGURATIONS, TASKS_DEFAULT, FOLDER_SCOPES } from 'vs/workbench/services/configuration/common/configuration';
+import { FOLDER_LOCAL_SETTINGS_PATH, FOLDER_SETTINGS_PATH, WORKSPACE_STANDALONE_CONFIGURATIONS, TASKS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, USER_STANDALONE_CONFIGURATIONS, TASKS_DEFAULT, FOLDER_SCOPES, getWorkspaceLocalConfigPath } from 'vs/workbench/services/configuration/common/configuration';
 import { FileOperationError, FileOperationResult, IFileService } from 'vs/platform/files/common/files';
 import { IResolvedTextEditorModel, ITextModelService } from 'vs/editor/common/services/resolverService';
 import { IConfigurationRegistry, Extensions as ConfigurationExtensions, ConfigurationScope, keyFromOverrideIdentifiers, OVERRIDE_PROPERTY_REGEX } from 'vs/platform/configuration/common/configurationRegistry';
@@ -125,7 +125,9 @@ export const enum EditableConfigurationTarget {
 	USER_LOCAL = 1,
 	USER_REMOTE,
 	WORKSPACE,
-	WORKSPACE_FOLDER
+	WORKSPACE_LOCAL,
+	WORKSPACE_FOLDER,
+	WORKSPACE_FOLDER_LOCAL
 }
 
 interface IConfigurationEditOperation extends IConfigurationValue {
@@ -327,11 +329,22 @@ export class ConfigurationEditing {
 			case EditableConfigurationTarget.WORKSPACE:
 				this.preferencesService.openWorkspaceSettings(options);
 				break;
+			case EditableConfigurationTarget.WORKSPACE_LOCAL:
+				this.preferencesService.openWorkspaceLocalSettings(options);
+				break;
 			case EditableConfigurationTarget.WORKSPACE_FOLDER:
 				if (operation.resource) {
 					const workspaceFolder = this.contextService.getWorkspaceFolder(operation.resource);
 					if (workspaceFolder) {
 						this.preferencesService.openFolderSettings({ folderUri: workspaceFolder.uri, jsonEditor: true });
+					}
+				}
+				break;
+			case EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL:
+				if (operation.resource) {
+					const workspaceFolder = this.contextService.getWorkspaceFolder(operation.resource);
+					if (workspaceFolder) {
+						this.preferencesService.openFolderLocalSettings({ folderUri: workspaceFolder.uri, jsonEditor: true });
 					}
 				}
 				break;
@@ -377,6 +390,8 @@ export class ConfigurationEditing {
 						return nls.localize('errorInvalidRemoteConfiguration', "Unable to write into remote user settings. Please open the remote user settings to correct errors/warnings in it and try again.");
 					case EditableConfigurationTarget.WORKSPACE:
 						return nls.localize('errorInvalidConfigurationWorkspace', "Unable to write into workspace settings. Please open the workspace settings to correct errors/warnings in the file and try again.");
+					case EditableConfigurationTarget.WORKSPACE_LOCAL:
+						return nls.localize('errorInvalidConfigurationWorkspaceLocal', "Unable to write into local workspace settings. Please open the local workspace settings to correct errors/warnings in the file and try again.");
 					case EditableConfigurationTarget.WORKSPACE_FOLDER: {
 						let workspaceFolderName: string = '<<unknown>>';
 						if (operation.resource) {
@@ -386,6 +401,16 @@ export class ConfigurationEditing {
 							}
 						}
 						return nls.localize('errorInvalidConfigurationFolder', "Unable to write into folder settings. Please open the '{0}' folder settings to correct errors/warnings in it and try again.", workspaceFolderName);
+					}
+					case EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL: {
+						let workspaceFolderName: string = '<<unknown>>';
+						if (operation.resource) {
+							const folder = this.contextService.getWorkspaceFolder(operation.resource);
+							if (folder) {
+								workspaceFolderName = folder.name;
+							}
+						}
+						return nls.localize('errorInvalidConfigurationFolderLocal', "Unable to write into local folder settings. Please open the '{0}' local folder settings to correct errors/warnings in it and try again.", workspaceFolderName);
 					}
 					default:
 						return '';
@@ -405,6 +430,8 @@ export class ConfigurationEditing {
 						return nls.localize('errorRemoteConfigurationFileDirty', "Unable to write into remote user settings because the file has unsaved changes. Please save the remote user settings file first and then try again.");
 					case EditableConfigurationTarget.WORKSPACE:
 						return nls.localize('errorConfigurationFileDirtyWorkspace', "Unable to write into workspace settings because the file has unsaved changes. Please save the workspace settings file first and then try again.");
+					case EditableConfigurationTarget.WORKSPACE_LOCAL:
+						return nls.localize('errorConfigurationFileDirtyWorkspaceLocal', "Unable to write into local workspace settings because the file has unsaved changes. Please save the local workspace settings file first and then try again.");
 					case EditableConfigurationTarget.WORKSPACE_FOLDER: {
 						let workspaceFolderName: string = '<<unknown>>';
 						if (operation.resource) {
@@ -414,6 +441,16 @@ export class ConfigurationEditing {
 							}
 						}
 						return nls.localize('errorConfigurationFileDirtyFolder', "Unable to write into folder settings because the file has unsaved changes. Please save the '{0}' folder settings file first and then try again.", workspaceFolderName);
+					}
+					case EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL: {
+						let workspaceFolderName: string = '<<unknown>>';
+						if (operation.resource) {
+							const folder = this.contextService.getWorkspaceFolder(operation.resource);
+							if (folder) {
+								workspaceFolderName = folder.name;
+							}
+						}
+						return nls.localize('errorConfigurationFileDirtyFolderLocal', "Unable to write into local folder settings because the file has unsaved changes. Please save the '{0}' local folder settings file first and then try again.", workspaceFolderName);
 					}
 					default:
 						return '';
@@ -433,8 +470,12 @@ export class ConfigurationEditing {
 						return nls.localize('errorRemoteConfigurationFileModifiedSince', "Unable to write into remote user settings because the content of the file is newer.");
 					case EditableConfigurationTarget.WORKSPACE:
 						return nls.localize('errorConfigurationFileModifiedSinceWorkspace', "Unable to write into workspace settings because the content of the file is newer.");
+					case EditableConfigurationTarget.WORKSPACE_LOCAL:
+						return nls.localize('errorConfigurationFileModifiedSinceWorkspaceLocal', "Unable to write into local workspace settings because the content of the file is newer.");
 					case EditableConfigurationTarget.WORKSPACE_FOLDER:
 						return nls.localize('errorConfigurationFileModifiedSinceFolder', "Unable to write into folder settings because the content of the file is newer.");
+					case EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL:
+						return nls.localize('errorConfigurationFileModifiedSinceFolderLocal', "Unable to write into local folder settings because the content of the file is newer.");
 				}
 			case ConfigurationEditingErrorCode.ERROR_INTERNAL: return nls.localize('errorUnknown', "Unable to write to {0} because of an internal error.", this.stringifyTarget(target));
 		}
@@ -448,8 +489,12 @@ export class ConfigurationEditing {
 				return nls.localize('remoteUserTarget', "Remote User Settings");
 			case EditableConfigurationTarget.WORKSPACE:
 				return nls.localize('workspaceTarget', "Workspace Settings");
+			case EditableConfigurationTarget.WORKSPACE_LOCAL:
+				return nls.localize('workspaceLocalTarget', "Local Workspace Settings");
 			case EditableConfigurationTarget.WORKSPACE_FOLDER:
 				return nls.localize('folderTarget', "Folder Settings");
+			case EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL:
+				return nls.localize('folderLocalTarget', "Local Folder Settings");
 			default:
 				return '';
 		}
@@ -513,11 +558,11 @@ export class ConfigurationEditing {
 		}
 
 		// Target cannot be workspace or folder if no workspace opened
-		if ((target === EditableConfigurationTarget.WORKSPACE || target === EditableConfigurationTarget.WORKSPACE_FOLDER) && this.contextService.getWorkbenchState() === WorkbenchState.EMPTY) {
+		if ((target === EditableConfigurationTarget.WORKSPACE || target === EditableConfigurationTarget.WORKSPACE_LOCAL || target === EditableConfigurationTarget.WORKSPACE_FOLDER || target === EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL) && this.contextService.getWorkbenchState() === WorkbenchState.EMPTY) {
 			throw this.toConfigurationEditingError(ConfigurationEditingErrorCode.ERROR_NO_WORKSPACE_OPENED, target, operation);
 		}
 
-		if (target === EditableConfigurationTarget.WORKSPACE) {
+		if (target === EditableConfigurationTarget.WORKSPACE || target === EditableConfigurationTarget.WORKSPACE_LOCAL) {
 			if (!operation.workspaceStandAloneConfigurationKey && !OVERRIDE_PROPERTY_REGEX.test(operation.key)) {
 				if (configurationScope === ConfigurationScope.APPLICATION) {
 					throw this.toConfigurationEditingError(ConfigurationEditingErrorCode.ERROR_INVALID_WORKSPACE_CONFIGURATION_APPLICATION, target, operation);
@@ -528,7 +573,7 @@ export class ConfigurationEditing {
 			}
 		}
 
-		if (target === EditableConfigurationTarget.WORKSPACE_FOLDER) {
+		if (target === EditableConfigurationTarget.WORKSPACE_FOLDER || target === EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
 			if (!operation.resource) {
 				throw this.toConfigurationEditingError(ConfigurationEditingErrorCode.ERROR_INVALID_FOLDER_TARGET, target, operation);
 			}
@@ -560,22 +605,27 @@ export class ConfigurationEditing {
 
 		// Check for standalone workspace configurations
 		if (config.key) {
-			const standaloneConfigurationMap = target === EditableConfigurationTarget.USER_LOCAL ? USER_STANDALONE_CONFIGURATIONS : WORKSPACE_STANDALONE_CONFIGURATIONS;
-			const standaloneConfigurationKeys = Object.keys(standaloneConfigurationMap);
-			for (const key of standaloneConfigurationKeys) {
-				const resource = this.getConfigurationFileResource(target, key, standaloneConfigurationMap[key], overrides.resource, undefined);
+			const standaloneConfigurationMap = target === EditableConfigurationTarget.USER_LOCAL ? USER_STANDALONE_CONFIGURATIONS
+				: target === EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL ? null
+					: target === EditableConfigurationTarget.WORKSPACE_LOCAL && this.contextService.getWorkbenchState() !== WorkbenchState.WORKSPACE ? null
+						: WORKSPACE_STANDALONE_CONFIGURATIONS;
+			if (standaloneConfigurationMap) {
+				const standaloneConfigurationKeys = Object.keys(standaloneConfigurationMap);
+				for (const key of standaloneConfigurationKeys) {
+					const resource = this.getConfigurationFileResource(target, key, standaloneConfigurationMap[key], overrides.resource, undefined);
 
-				// Check for prefix
-				if (config.key === key) {
-					const jsonPath = this.isWorkspaceConfigurationResource(resource) ? [key] : [];
-					return { key: jsonPath[jsonPath.length - 1], jsonPath, value: config.value, resource: withNullAsUndefined(resource), workspaceStandAloneConfigurationKey: key, target };
-				}
+					// Check for prefix
+					if (config.key === key) {
+						const jsonPath = this.isWorkspaceConfigurationResource(resource) ? [key] : [];
+						return { key: jsonPath[jsonPath.length - 1], jsonPath, value: config.value, resource: withNullAsUndefined(resource), workspaceStandAloneConfigurationKey: key, target };
+					}
 
-				// Check for prefix.<setting>
-				const keyPrefix = `${key}.`;
-				if (config.key.indexOf(keyPrefix) === 0) {
-					const jsonPath = this.isWorkspaceConfigurationResource(resource) ? [key, config.key.substr(keyPrefix.length)] : [config.key.substr(keyPrefix.length)];
-					return { key: jsonPath[jsonPath.length - 1], jsonPath, value: config.value, resource: withNullAsUndefined(resource), workspaceStandAloneConfigurationKey: key, target };
+					// Check for prefix.<setting>
+					const keyPrefix = `${key}.`;
+					if (config.key.indexOf(keyPrefix) === 0) {
+						const jsonPath = this.isWorkspaceConfigurationResource(resource) ? [key, config.key.substr(keyPrefix.length)] : [config.key.substr(keyPrefix.length)];
+						return { key: jsonPath[jsonPath.length - 1], jsonPath, value: config.value, resource: withNullAsUndefined(resource), workspaceStandAloneConfigurationKey: key, target };
+					}
 				}
 			}
 		}
@@ -597,7 +647,7 @@ export class ConfigurationEditing {
 
 	private isWorkspaceConfigurationResource(resource: URI | null): boolean {
 		const workspace = this.contextService.getWorkspace();
-		return !!(workspace.configuration && resource && workspace.configuration.fsPath === resource.fsPath);
+		return !!(workspace.configuration && resource && (this.uriIdentityService.extUri.isEqual(workspace.configuration, resource) || this.uriIdentityService.extUri.isEqual(getWorkspaceLocalConfigPath(workspace.configuration), resource)));
 	}
 
 	private getConfigurationFileResource(target: EditableConfigurationTarget, standAloneConfigurationKey: string | undefined, relativePath: string, resource: URI | null | undefined, scope: ConfigurationScope | undefined): URI | null {
@@ -628,11 +678,29 @@ export class ConfigurationEditing {
 				}
 			}
 
+			if (target === EditableConfigurationTarget.WORKSPACE_LOCAL) {
+				if (workbenchState === WorkbenchState.WORKSPACE && workspace.configuration) {
+					return getWorkspaceLocalConfigPath(workspace.configuration);
+				}
+				if (workbenchState === WorkbenchState.FOLDER) {
+					return workspace.folders[0].toResource(FOLDER_LOCAL_SETTINGS_PATH);
+				}
+			}
+
 			if (target === EditableConfigurationTarget.WORKSPACE_FOLDER) {
 				if (resource) {
 					const folder = this.contextService.getWorkspaceFolder(resource);
 					if (folder) {
 						return folder.toResource(relativePath);
+					}
+				}
+			}
+
+			if (target === EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
+				if (resource) {
+					const folder = this.contextService.getWorkspaceFolder(resource);
+					if (folder) {
+						return folder.toResource(FOLDER_LOCAL_SETTINGS_PATH);
 					}
 				}
 			}

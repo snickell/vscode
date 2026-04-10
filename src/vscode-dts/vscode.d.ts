@@ -5845,7 +5845,9 @@ declare module 'vscode' {
 	 * - *Default Settings*
 	 * - *Global (User) Settings*
 	 * - *Workspace settings*
+	 * - *Local Workspace settings*
 	 * - *Workspace Folder settings* - From one of the {@link workspace.workspaceFolders Workspace Folders} under which requested resource belongs to.
+	 * - *Local Folder settings* - From one of the {@link workspace.workspaceFolders Workspace Folders} under which requested resource belongs to.
 	 * - *Language settings* - Settings defined under requested language.
 	 *
 	 * The *effective* value (returned by {@linkcode WorkspaceConfiguration.get get}) is computed by overriding or merging the values in the following order:
@@ -5853,11 +5855,15 @@ declare module 'vscode' {
 	 * 1. `defaultValue` (if defined in `package.json` otherwise derived from the value's type)
 	 * 1. `globalValue` (if defined)
 	 * 1. `workspaceValue` (if defined)
+	 * 1. `workspaceLocalValue` (if defined)
 	 * 1. `workspaceFolderValue` (if defined)
+	 * 1. `workspaceFolderLocalValue` (if defined)
 	 * 1. `defaultLanguageValue` (if defined)
 	 * 1. `globalLanguageValue` (if defined)
 	 * 1. `workspaceLanguageValue` (if defined)
+	 * 1. `workspaceLocalLanguageValue` (if defined)
 	 * 1. `workspaceFolderLanguageValue` (if defined)
+	 * 1. `workspaceFolderLocalLanguageValue` (if defined)
 	 *
 	 * **Note:** Only `object` value types are merged and all other value types are overridden.
 	 *
@@ -5949,12 +5955,16 @@ declare module 'vscode' {
 			defaultValue?: T;
 			globalValue?: T;
 			workspaceValue?: T;
+			workspaceLocalValue?: T;
 			workspaceFolderValue?: T;
+			workspaceFolderLocalValue?: T;
 
 			defaultLanguageValue?: T;
 			globalLanguageValue?: T;
 			workspaceLanguageValue?: T;
+			workspaceLocalLanguageValue?: T;
 			workspaceFolderLanguageValue?: T;
+			workspaceFolderLocalLanguageValue?: T;
 
 			languageIds?: string[];
 

@@ -39,6 +39,7 @@
         "id": "jsonc",
         "extensions": [
           ".code-workspace",
+          ".code-workspace.local",
           "language-configuration.json",
           "icon-theme.json",
           "color-theme.json",
@@ -46,6 +47,8 @@
         ],
         "filenames": [
           "settings.json",
+          "settings.local.json",
+          "workspace.json.local",
           "launch.json",
           "tasks.json",
           "keybindings.json",
@@ -100,7 +103,15 @@
         "url": "vscode://schemas/workspaceConfig"
       },
       {
+        "fileMatch": "%APP_WORKSPACES_HOME%/*/workspace.json.local",
+        "url": "vscode://schemas/workspaceConfig"
+      },
+      {
         "fileMatch": "**/*.code-workspace",
+        "url": "vscode://schemas/workspaceConfig"
+      },
+      {
+        "fileMatch": "**/*.code-workspace.local",
         "url": "vscode://schemas/workspaceConfig"
       },
       {
@@ -109,6 +120,10 @@
       },
       {
         "fileMatch": "/.vscode/settings.json",
+        "url": "vscode://schemas/settings/folder"
+      },
+      {
+        "fileMatch": "/.vscode/settings.local.json",
         "url": "vscode://schemas/settings/folder"
       },
       {

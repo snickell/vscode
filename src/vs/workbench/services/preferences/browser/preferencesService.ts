@@ -35,7 +35,7 @@ import { IJSONEditingService } from 'vs/workbench/services/configuration/common/
 import { GroupDirection, IEditorGroupsService } from 'vs/workbench/services/editor/common/editorGroupsService';
 import { IEditorService, SIDE_GROUP, SIDE_GROUP_TYPE } from 'vs/workbench/services/editor/common/editorService';
 import { KeybindingsEditorInput } from 'vs/workbench/services/preferences/browser/keybindingsEditorInput';
-import { DEFAULT_SETTINGS_EDITOR_SETTING, FOLDER_SETTINGS_PATH, IKeybindingsEditorOptions, IKeybindingsEditorPane, IOpenSettingsOptions, IPreferencesEditorModel, IPreferencesService, ISetting, ISettingsEditorOptions, USE_SPLIT_JSON_SETTING, validateSettingsEditorOptions } from 'vs/workbench/services/preferences/common/preferences';
+import { DEFAULT_SETTINGS_EDITOR_SETTING, FOLDER_LOCAL_SETTINGS_PATH, FOLDER_SETTINGS_PATH, IKeybindingsEditorOptions, IKeybindingsEditorPane, IOpenSettingsOptions, IPreferencesEditorModel, IPreferencesService, ISetting, ISettingsEditorOptions, USE_SPLIT_JSON_SETTING, validateSettingsEditorOptions } from 'vs/workbench/services/preferences/common/preferences';
 import { SettingsEditor2Input } from 'vs/workbench/services/preferences/common/preferencesEditorInput';
 import { defaultKeybindingsContents, DefaultKeybindingsEditorModel, DefaultRawSettingsEditorModel, DefaultSettings, DefaultSettingsEditorModel, Settings2EditorModel, SettingsEditorModel, WorkspaceConfigurationEditorModel } from 'vs/workbench/services/preferences/common/preferencesModels';
 import { IRemoteAgentService } from 'vs/workbench/services/remote/common/remoteAgentService';
@@ -45,6 +45,7 @@ import { isObject } from 'vs/base/common/types';
 import { SuggestController } from 'vs/editor/contrib/suggest/browser/suggestController';
 import { IUserDataProfileService } from 'vs/workbench/services/userDataProfile/common/userDataProfile';
 import { IUserDataProfilesService } from 'vs/platform/userDataProfile/common/userDataProfile';
+import { getWorkspaceLocalConfigPath } from 'vs/workbench/services/configuration/common/configuration';
 
 const emptyEditableSettingsContent = '{\n}';
 
@@ -105,6 +106,14 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 		return workspace.configuration || workspace.folders[0].toResource(FOLDER_SETTINGS_PATH);
 	}
 
+	get workspaceLocalSettingsResource(): URI | null {
+		if (this.contextService.getWorkbenchState() === WorkbenchState.EMPTY) {
+			return null;
+		}
+		const workspace = this.contextService.getWorkspace();
+		return workspace.configuration ? getWorkspaceLocalConfigPath(workspace.configuration) : workspace.folders[0].toResource(FOLDER_LOCAL_SETTINGS_PATH);
+	}
+
 	get settingsEditor2Input(): SettingsEditor2Input {
 		return this.instantiationService.createInstance(SettingsEditor2Input);
 	}
@@ -112,6 +121,11 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 	getFolderSettingsResource(resource: URI): URI | null {
 		const folder = this.contextService.getWorkspaceFolder(resource);
 		return folder ? folder.toResource(FOLDER_SETTINGS_PATH) : null;
+	}
+
+	getFolderLocalSettingsResource(resource: URI): URI | null {
+		const folder = this.contextService.getWorkspaceFolder(resource);
+		return folder ? folder.toResource(FOLDER_LOCAL_SETTINGS_PATH) : null;
 	}
 
 	resolveModel(uri: URI): ITextModel | null {
@@ -176,10 +190,20 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 			return this.createEditableSettingsEditorModel(ConfigurationTarget.WORKSPACE, workspaceSettingsUri);
 		}
 
+		const workspaceLocalSettingsUri = await this.getEditableSettingsURI(ConfigurationTarget.WORKSPACE_LOCAL);
+		if (workspaceLocalSettingsUri && workspaceLocalSettingsUri.toString() === uri.toString()) {
+			return this.createEditableSettingsEditorModel(ConfigurationTarget.WORKSPACE_LOCAL, workspaceLocalSettingsUri);
+		}
+
 		if (this.contextService.getWorkbenchState() === WorkbenchState.WORKSPACE) {
 			const settingsUri = await this.getEditableSettingsURI(ConfigurationTarget.WORKSPACE_FOLDER, uri);
 			if (settingsUri && settingsUri.toString() === uri.toString()) {
-				return this.createEditableSettingsEditorModel(ConfigurationTarget.WORKSPACE_FOLDER, uri);
+				return this.createEditableSettingsEditorModel(ConfigurationTarget.WORKSPACE_FOLDER, settingsUri);
+			}
+
+			const localSettingsUri = await this.getEditableSettingsURI(ConfigurationTarget.WORKSPACE_FOLDER_LOCAL, uri);
+			if (localSettingsUri && localSettingsUri.toString() === uri.toString()) {
+				return this.createEditableSettingsEditorModel(ConfigurationTarget.WORKSPACE_FOLDER_LOCAL, localSettingsUri);
 			}
 		}
 
@@ -291,6 +315,19 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 		return this.open(this.workspaceSettingsResource, options);
 	}
 
+	openWorkspaceLocalSettings(options: IOpenSettingsOptions = {}): Promise<IEditorPane | undefined> {
+		if (!this.workspaceLocalSettingsResource) {
+			this.notificationService.info(nls.localize('openFolderFirstLocal', "Open a folder or workspace first to create local workspace settings."));
+			return Promise.reject(null);
+		}
+
+		options = {
+			...options,
+			target: ConfigurationTarget.WORKSPACE_LOCAL
+		};
+		return this.open(this.workspaceLocalSettingsResource, options);
+	}
+
 	async openFolderSettings(options: IOpenSettingsOptions = {}): Promise<IEditorPane | undefined> {
 		options = {
 			...options,
@@ -302,6 +339,24 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 		}
 
 		const folderSettingsUri = await this.getEditableSettingsURI(ConfigurationTarget.WORKSPACE_FOLDER, options.folderUri);
+		if (!folderSettingsUri) {
+			throw new Error(`Invalid folder URI - ${options.folderUri.toString()}`);
+		}
+
+		return this.open(folderSettingsUri, options);
+	}
+
+	async openFolderLocalSettings(options: IOpenSettingsOptions = {}): Promise<IEditorPane | undefined> {
+		options = {
+			...options,
+			target: ConfigurationTarget.WORKSPACE_FOLDER_LOCAL
+		};
+
+		if (!options.folderUri) {
+			throw new Error(`Missing folder URI`);
+		}
+
+		const folderSettingsUri = await this.getEditableSettingsURI(ConfigurationTarget.WORKSPACE_FOLDER_LOCAL, options.folderUri);
 		if (!folderSettingsUri) {
 			throw new Error(`Invalid folder URI - ${options.folderUri.toString()}`);
 		}
@@ -409,8 +464,10 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 	private getDefaultSettingsResource(configurationTarget: ConfigurationTarget): URI {
 		switch (configurationTarget) {
 			case ConfigurationTarget.WORKSPACE:
+			case ConfigurationTarget.WORKSPACE_LOCAL:
 				return URI.from({ scheme: network.Schemas.vscode, authority: 'defaultsettings', path: `/workspaceSettings.json` });
 			case ConfigurationTarget.WORKSPACE_FOLDER:
+			case ConfigurationTarget.WORKSPACE_FOLDER_LOCAL:
 				return URI.from({ scheme: network.Schemas.vscode, authority: 'defaultsettings', path: `/resourceSettings.json` });
 		}
 		return URI.from({ scheme: network.Schemas.vscode, authority: 'defaultsettings', path: `/settings.json` });
@@ -423,7 +480,8 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 
 	private async createEditableSettingsEditorModel(configurationTarget: ConfigurationTarget, settingsUri: URI): Promise<SettingsEditorModel> {
 		const workspace = this.contextService.getWorkspace();
-		if (workspace.configuration && workspace.configuration.toString() === settingsUri.toString()) {
+		const workspaceLocalSettingsResource = this.workspaceLocalSettingsResource;
+		if (workspace.configuration && (workspace.configuration.toString() === settingsUri.toString() || workspaceLocalSettingsResource?.toString() === settingsUri.toString())) {
 			const reference = await this.textModelResolverService.createModelReference(settingsUri);
 			return this.instantiationService.createInstance(WorkspaceConfigurationEditorModel, reference, configurationTarget);
 		}
@@ -439,13 +497,13 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 	}
 
 	private getDefaultSettings(target: ConfigurationTarget): DefaultSettings {
-		if (target === ConfigurationTarget.WORKSPACE) {
+		if (target === ConfigurationTarget.WORKSPACE || target === ConfigurationTarget.WORKSPACE_LOCAL) {
 			if (!this._defaultWorkspaceSettingsContentModel) {
 				this._defaultWorkspaceSettingsContentModel = new DefaultSettings(this.getMostCommonlyUsedSettings(), target);
 			}
 			return this._defaultWorkspaceSettingsContentModel;
 		}
-		if (target === ConfigurationTarget.WORKSPACE_FOLDER) {
+		if (target === ConfigurationTarget.WORKSPACE_FOLDER || target === ConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
 			if (!this._defaultFolderSettingsContentModel) {
 				this._defaultFolderSettingsContentModel = new DefaultSettings(this.getMostCommonlyUsedSettings(), target);
 			}
@@ -470,24 +528,35 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 			}
 			case ConfigurationTarget.WORKSPACE:
 				return this.workspaceSettingsResource;
+			case ConfigurationTarget.WORKSPACE_LOCAL:
+				return this.workspaceLocalSettingsResource;
 			case ConfigurationTarget.WORKSPACE_FOLDER:
 				if (resource) {
 					return this.getFolderSettingsResource(resource);
+				}
+				return null;
+			case ConfigurationTarget.WORKSPACE_FOLDER_LOCAL:
+				if (resource) {
+					return this.getFolderLocalSettingsResource(resource);
 				}
 		}
 		return null;
 	}
 
 	private async createSettingsIfNotExists(target: ConfigurationTarget, resource: URI): Promise<void> {
-		if (this.contextService.getWorkbenchState() === WorkbenchState.WORKSPACE && target === ConfigurationTarget.WORKSPACE) {
+		if (this.contextService.getWorkbenchState() === WorkbenchState.WORKSPACE && (target === ConfigurationTarget.WORKSPACE || target === ConfigurationTarget.WORKSPACE_LOCAL)) {
 			const workspaceConfig = this.contextService.getWorkspace().configuration;
-			if (!workspaceConfig) {
+			if (!workspaceConfig && target === ConfigurationTarget.WORKSPACE) {
 				return;
 			}
 
-			const content = await this.textFileService.read(workspaceConfig);
-			if (Object.keys(parse(content.value)).indexOf('settings') === -1) {
-				await this.jsonEditingService.write(resource, [{ path: ['settings'], value: {} }], true);
+			if (target === ConfigurationTarget.WORKSPACE_LOCAL) {
+				await this.createIfNotExists(resource, '{\n\t"settings": {}\n}');
+			} else {
+				const content = await this.textFileService.read(workspaceConfig!);
+				if (Object.keys(parse(content.value)).indexOf('settings') === -1) {
+					await this.jsonEditingService.write(resource, [{ path: ['settings'], value: {} }], true);
+				}
 			}
 			return undefined;
 		}

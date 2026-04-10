@@ -24,7 +24,7 @@ import { IHoverOptions, IHoverService, IHoverWidget } from 'vs/workbench/service
 
 const $ = DOM.$;
 
-type ScopeString = 'workspace' | 'user' | 'remote' | 'default';
+type ScopeString = 'workspace' | 'workspaceLocal' | 'workspaceFolder' | 'workspaceFolderLocal' | 'user' | 'remote' | 'default';
 
 export interface ISettingOverrideClickEvent {
 	scope: ScopeString;
@@ -288,9 +288,7 @@ export class SettingsTreeIndicatorsLabel implements IDisposable {
 
 	private getInlineScopeDisplayText(completeScope: string): string {
 		const [scope, language] = completeScope.split(':');
-		const localizedScope = scope === 'user' ?
-			localize('user', "User") : scope === 'workspace' ?
-				localize('workspace', "Workspace") : localize('remote', "Remote");
+		const localizedScope = getLocalizedScopeDisplayText(scope);
 		if (language) {
 			return `${this.languageService.getLanguageName(language)} > ${localizedScope}`;
 		}
@@ -477,11 +475,26 @@ function getDefaultValueSourceToDisplay(element: SettingsTreeSettingElement): st
 	return sourceToDisplay;
 }
 
+function getLocalizedScopeDisplayText(scope: string): string {
+	switch (scope) {
+		case 'user':
+			return localize('user', "User");
+		case 'workspace':
+			return localize('workspace', "Workspace");
+		case 'workspaceLocal':
+			return localize('workspaceLocal', "Local Workspace Settings");
+		case 'workspaceFolder':
+			return localize('workspaceFolder', "Folder");
+		case 'workspaceFolderLocal':
+			return localize('workspaceFolderLocal', "Local Folder Settings");
+		default:
+			return localize('remote', "Remote");
+	}
+}
+
 function getAccessibleScopeDisplayText(completeScope: string, languageService: ILanguageService): string {
 	const [scope, language] = completeScope.split(':');
-	const localizedScope = scope === 'user' ?
-		localize('user', "User") : scope === 'workspace' ?
-			localize('workspace', "Workspace") : localize('remote', "Remote");
+	const localizedScope = getLocalizedScopeDisplayText(scope);
 	if (language) {
 		return localize('modifiedInScopeForLanguage', "The {0} scope for {1}", localizedScope, languageService.getLanguageName(language));
 	}
@@ -490,9 +503,7 @@ function getAccessibleScopeDisplayText(completeScope: string, languageService: I
 
 function getAccessibleScopeDisplayMidSentenceText(completeScope: string, languageService: ILanguageService): string {
 	const [scope, language] = completeScope.split(':');
-	const localizedScope = scope === 'user' ?
-		localize('user', "User") : scope === 'workspace' ?
-			localize('workspace', "Workspace") : localize('remote', "Remote");
+	const localizedScope = getLocalizedScopeDisplayText(scope);
 	if (language) {
 		return localize('modifiedInScopeForLanguageMidSentence', "the {0} scope for {1}", localizedScope.toLowerCase(), languageService.getLanguageName(language));
 	}

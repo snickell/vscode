@@ -9,11 +9,14 @@ import { IConfigurationService } from 'vs/platform/configuration/common/configur
 import { refineServiceDecorator } from 'vs/platform/instantiation/common/instantiation';
 import { Event } from 'vs/base/common/event';
 import { ResourceMap } from 'vs/base/common/map';
+import { basename, dirname, joinPath } from 'vs/base/common/resources';
 import { IAnyWorkspaceIdentifier } from 'vs/platform/workspace/common/workspace';
 
 export const FOLDER_CONFIG_FOLDER_NAME = '.vscode';
 export const FOLDER_SETTINGS_NAME = 'settings';
 export const FOLDER_SETTINGS_PATH = `${FOLDER_CONFIG_FOLDER_NAME}/${FOLDER_SETTINGS_NAME}.json`;
+export const FOLDER_LOCAL_SETTINGS_NAME = 'settings.local';
+export const FOLDER_LOCAL_SETTINGS_PATH = `${FOLDER_CONFIG_FOLDER_NAME}/${FOLDER_LOCAL_SETTINGS_NAME}.json`;
 
 export const defaultSettingsSchemaId = 'vscode://schemas/settings/default';
 export const userSettingsSchemaId = 'vscode://schemas/settings/user';
@@ -87,3 +90,7 @@ export interface IWorkbenchConfigurationService extends IConfigurationService {
 }
 
 export const TASKS_DEFAULT = '{\n\t\"version\": \"2.0.0\",\n\t\"tasks\": []\n}';
+
+export function getWorkspaceLocalConfigPath(workspaceConfigPath: URI): URI {
+	return joinPath(dirname(workspaceConfigPath), `${basename(workspaceConfigPath)}.local`);
+}

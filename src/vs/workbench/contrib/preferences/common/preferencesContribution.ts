@@ -20,10 +20,11 @@ import { workbenchConfigurationNodeBase } from 'vs/workbench/common/configuratio
 import { IWorkbenchContribution } from 'vs/workbench/common/contributions';
 import { EditorInputWithOptions } from 'vs/workbench/common/editor';
 import { SideBySideEditorInput } from 'vs/workbench/common/editor/sideBySideEditorInput';
-import { RegisteredEditorPriority, IEditorResolverService } from 'vs/workbench/services/editor/common/editorResolverService';
+import { EditorInputFactoryObject, IEditorResolverService, RegisteredEditorPriority } from 'vs/workbench/services/editor/common/editorResolverService';
 import { ITextEditorService } from 'vs/workbench/services/textfile/common/textEditorService';
-import { DEFAULT_SETTINGS_EDITOR_SETTING, FOLDER_SETTINGS_PATH, IPreferencesService, USE_SPLIT_JSON_SETTING } from 'vs/workbench/services/preferences/common/preferences';
+import { DEFAULT_SETTINGS_EDITOR_SETTING, FOLDER_LOCAL_SETTINGS_PATH, FOLDER_SETTINGS_PATH, IPreferencesService, USE_SPLIT_JSON_SETTING } from 'vs/workbench/services/preferences/common/preferences';
 import { IUserDataProfileService } from 'vs/workbench/services/userDataProfile/common/userDataProfile';
+import { IEditorOptions } from 'vs/platform/editor/common/editor';
 
 const schemaRegistry = Registry.as<JSONContributionRegistry.IJSONContributionRegistry>(JSONContributionRegistry.Extensions.JSONContribution);
 
@@ -59,7 +60,11 @@ export class PreferencesContribution implements IWorkbenchContribution {
 
 		// install editor opening listener unless user has disabled this
 		if (!!this.configurationService.getValue(USE_SPLIT_JSON_SETTING) || !!this.configurationService.getValue(DEFAULT_SETTINGS_EDITOR_SETTING)) {
-			this.editorOpeningListener = this.editorResolverService.registerEditor(
+			const editorInputFactory: EditorInputFactoryObject = {
+				createEditorInput: editorInput => this.createSettingsEditorInput(editorInput.resource, editorInput.options)
+			};
+			const registrations = new DisposableStore();
+			registrations.add(this.editorResolverService.registerEditor(
 				'**/settings.json',
 				{
 					id: SideBySideEditorInput.ID,
@@ -67,37 +72,49 @@ export class PreferencesContribution implements IWorkbenchContribution {
 					priority: RegisteredEditorPriority.builtin,
 				},
 				{},
+				editorInputFactory
+			));
+			registrations.add(this.editorResolverService.registerEditor(
+				'**/settings.local.json',
 				{
-					createEditorInput: ({ resource, options }): EditorInputWithOptions => {
-						// Global User Settings File
-						if (isEqual(resource, this.userDataProfileService.currentProfile.settingsResource)) {
-							return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.USER_LOCAL, resource), options };
-						}
-
-						// Single Folder Workspace Settings File
-						const state = this.workspaceService.getWorkbenchState();
-						if (state === WorkbenchState.FOLDER) {
-							const folders = this.workspaceService.getWorkspace().folders;
-							if (isEqual(resource, folders[0].toResource(FOLDER_SETTINGS_PATH))) {
-								return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.WORKSPACE, resource), options };
-							}
-						}
-
-						// Multi Folder Workspace Settings File
-						else if (state === WorkbenchState.WORKSPACE) {
-							const folders = this.workspaceService.getWorkspace().folders;
-							for (const folder of folders) {
-								if (isEqual(resource, folder.toResource(FOLDER_SETTINGS_PATH))) {
-									return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.WORKSPACE_FOLDER, resource), options };
-								}
-							}
-						}
-
-						return { editor: this.textEditorService.createTextEditor({ resource }), options };
-					}
-				}
-			);
+					id: SideBySideEditorInput.ID,
+					label: nls.localize('splitSettingsEditorLabel', "Split Settings Editor"),
+					priority: RegisteredEditorPriority.builtin,
+				},
+				{},
+				editorInputFactory
+			));
+			this.editorOpeningListener = registrations;
 		}
+	}
+
+	private createSettingsEditorInput(resource: URI, options: IEditorOptions | undefined): EditorInputWithOptions {
+		if (isEqual(resource, this.userDataProfileService.currentProfile.settingsResource)) {
+			return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.USER_LOCAL, resource), options };
+		}
+
+		const state = this.workspaceService.getWorkbenchState();
+		if (state === WorkbenchState.FOLDER) {
+			const folder = this.workspaceService.getWorkspace().folders[0];
+			if (isEqual(resource, folder.toResource(FOLDER_SETTINGS_PATH))) {
+				return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.WORKSPACE, resource), options };
+			}
+			if (isEqual(resource, folder.toResource(FOLDER_LOCAL_SETTINGS_PATH))) {
+				return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.WORKSPACE_LOCAL, resource), options };
+			}
+		} else if (state === WorkbenchState.WORKSPACE) {
+			const folders = this.workspaceService.getWorkspace().folders;
+			for (const folder of folders) {
+				if (isEqual(resource, folder.toResource(FOLDER_SETTINGS_PATH))) {
+					return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.WORKSPACE_FOLDER, resource), options };
+				}
+				if (isEqual(resource, folder.toResource(FOLDER_LOCAL_SETTINGS_PATH))) {
+					return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.WORKSPACE_FOLDER_LOCAL, resource), options };
+				}
+			}
+		}
+
+		return { editor: this.textEditorService.createTextEditor({ resource }), options };
 	}
 
 	private start(): void {
