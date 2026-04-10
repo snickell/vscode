@@ -11,19 +11,6 @@ import './importExportProfiles';
 
 type WorkspaceConfigurationFileKey = 'settings' | 'launch' | 'tasks' | 'extensions';
 
-interface IWorkspaceConfigurationFileDescriptor {
-	readonly key: WorkspaceConfigurationFileKey;
-	readonly contributesVariableCompletions: boolean;
-	readonly contributesExtensionCompletions: boolean;
-}
-
-const workspaceConfigurationFileDescriptors: readonly IWorkspaceConfigurationFileDescriptor[] = [
-	{ key: 'settings', contributesVariableCompletions: false, contributesExtensionCompletions: false },
-	{ key: 'launch', contributesVariableCompletions: true, contributesExtensionCompletions: false },
-	{ key: 'tasks', contributesVariableCompletions: true, contributesExtensionCompletions: false },
-	{ key: 'extensions', contributesVariableCompletions: false, contributesExtensionCompletions: true },
-];
-
 function createFolderConfigurationSelector(key: WorkspaceConfigurationFileKey): vscode.DocumentSelector {
 	return [
 		{ language: 'jsonc', pattern: `**/${key}.json` },
@@ -35,8 +22,8 @@ const settingsSelector = createFolderConfigurationSelector('settings');
 const launchSelector = createFolderConfigurationSelector('launch');
 const tasksSelector = createFolderConfigurationSelector('tasks');
 const extensionsSelector = createFolderConfigurationSelector('extensions');
-const workspaceVariableCompletionSections = workspaceConfigurationFileDescriptors.filter(descriptor => descriptor.contributesVariableCompletions).map(descriptor => descriptor.key);
-const workspaceExtensionsCompletionSection = workspaceConfigurationFileDescriptors.find(descriptor => descriptor.contributesExtensionCompletions)!.key;
+const workspaceVariableCompletionSections: readonly WorkspaceConfigurationFileKey[] = ['launch', 'tasks'];
+const workspaceExtensionsCompletionSection: WorkspaceConfigurationFileKey = 'extensions';
 
 const workspaceConfigurationSelector: vscode.DocumentSelector = [
 	{ language: 'jsonc', pattern: '**/*.code-workspace' },
@@ -131,7 +118,7 @@ function isCompletingInsidePropertyStringValue(document: vscode.TextDocument, lo
 	return false;
 }
 
-function isLocationInsideTopLevelProperty(location: Location, values: string[]) {
+function isLocationInsideTopLevelProperty(location: Location, values: readonly string[]) {
 	return values.includes(location.path[0] as string);
 }
 

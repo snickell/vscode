@@ -12,7 +12,7 @@ import { ResourceMap } from 'vs/base/common/map';
 import { URI } from 'vs/base/common/uri';
 import { isBoolean } from 'vs/base/common/types';
 import { distinct } from 'vs/base/common/arrays';
-import { EXTENSIONS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, TASKS_CONFIGURATION_KEY, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS } from 'vs/workbench/services/configuration/common/configuration';
+import { EXTENSIONS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, TASKS_CONFIGURATION_KEY, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS } from 'vs/workbench/services/configuration/common/workspaceFileConfiguration';
 
 export class WorkspaceConfigurationModelParser extends ConfigurationModelParser {
 
@@ -70,7 +70,7 @@ export class WorkspaceConfigurationModelParser extends ConfigurationModelParser 
 		this._transient = isBoolean(raw['transient']) && raw['transient'];
 		this._settingsModelParser.parseRaw(raw['settings'], configurationParseOptions);
 		for (const descriptor of WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS) {
-			this._standaloneModels.set(descriptor.key, this.createConfigurationModelFrom(raw, descriptor.workspaceSection));
+			this._standaloneModels.set(descriptor.key, this.createConfigurationModelFrom(raw, descriptor.key));
 		}
 		return super.doParseRaw(raw, configurationParseOptions);
 	}

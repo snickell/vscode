@@ -53,15 +53,18 @@ Completed:
 Completed.
 
 The file family is now described once and consumed in the loader, writer, parser, and recommendation paths. `extensions` no longer carries its own path matrix.
+This pass was rerun after the descriptor trim.
 
 ## Critique Pass 2: minimalism
 
 Completed.
 
-The refactor removes the loose path maps and the repeated standalone-resource routing logic. It does not add a new service layer, code generation, or manifest synthesis.
+The refactor removes the loose path maps and the repeated standalone-resource routing logic. A followup trim then removed descriptor fields that were only restating the key and path shape. It does not add a new service layer, code generation, or manifest synthesis.
+This pass was rerun after the descriptor trim.
 
 ## Critique Pass 3: style and mergeability
 
 Completed.
 
 The extension manifest stayed static, the extension runtime kept a local helper instead of importing workbench internals, the main checkout stayed free of tracked changes after focused validation, and `git diff --check` is clean.
+This pass was rerun after the descriptor trim.

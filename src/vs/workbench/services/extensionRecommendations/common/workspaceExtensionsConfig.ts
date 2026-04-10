@@ -19,9 +19,10 @@ import { localize } from 'vs/nls';
 import { URI } from 'vs/base/common/uri';
 import { IJSONEditingService, IJSONValue } from 'vs/workbench/services/configuration/common/jsonEditing';
 import { basename } from 'vs/base/common/resources';
-import { getWorkspaceExtensionRecommendationDescriptor, getWorkspaceLocalConfigPath } from 'vs/workbench/services/configuration/common/configuration';
+import { getWorkspaceLocalConfigPath } from 'vs/workbench/services/configuration/common/configuration';
+import { EXTENSIONS_CONFIGURATION_KEY, getWorkspaceFileConfigurationDescriptor } from 'vs/workbench/services/configuration/common/workspaceFileConfiguration';
 
-const extensionsConfigurationDescriptor = getWorkspaceExtensionRecommendationDescriptor();
+const extensionsConfigurationDescriptor = getWorkspaceFileConfigurationDescriptor(EXTENSIONS_CONFIGURATION_KEY)!;
 export const EXTENSIONS_CONFIG = extensionsConfigurationDescriptor.folderSharedPath;
 export const EXTENSIONS_LOCAL_CONFIG = extensionsConfigurationDescriptor.folderLocalPath;
 
@@ -189,12 +190,12 @@ export class WorkspaceExtensionsConfigService extends Disposable implements IWor
 		if (workspace.configuration) {
 			const workspaceExtensionsConfigContent = await this.resolveWorkspaceExtensionConfig(workspace.configuration);
 			if (includeEmpty || workspaceExtensionsConfigContent) {
-				result.push({ kind: 'workspace', resource: workspace.configuration, jsonPathPrefix: [extensionsConfigurationDescriptor.workspaceSection], content: workspaceExtensionsConfigContent ?? {} });
+				result.push({ kind: 'workspace', resource: workspace.configuration, jsonPathPrefix: [extensionsConfigurationDescriptor.key], content: workspaceExtensionsConfigContent ?? {} });
 			}
 			const workspaceLocalConfigurationResource = getWorkspaceLocalConfigPath(workspace.configuration);
 			const workspaceLocalExtensionsConfigContent = await this.resolveWorkspaceExtensionConfig(workspaceLocalConfigurationResource);
 			if (includeEmpty || workspaceLocalExtensionsConfigContent) {
-				result.push({ kind: 'workspaceLocal', resource: workspaceLocalConfigurationResource, jsonPathPrefix: [extensionsConfigurationDescriptor.workspaceSection], content: workspaceLocalExtensionsConfigContent ?? {} });
+				result.push({ kind: 'workspaceLocal', resource: workspaceLocalConfigurationResource, jsonPathPrefix: [extensionsConfigurationDescriptor.key], content: workspaceLocalExtensionsConfigContent ?? {} });
 			}
 		}
 
@@ -227,7 +228,7 @@ export class WorkspaceExtensionsConfigService extends Disposable implements IWor
 	private async resolveWorkspaceExtensionConfig(workspaceConfigurationResource: URI): Promise<IExtensionsConfigContent | undefined> {
 		try {
 			const content = await this.fileService.readFile(workspaceConfigurationResource);
-			const extensionsConfigContent = <IExtensionsConfigContent | undefined>parse(content.value.toString())[extensionsConfigurationDescriptor.workspaceSection];
+			const extensionsConfigContent = <IExtensionsConfigContent | undefined>parse(content.value.toString())[extensionsConfigurationDescriptor.key];
 			return extensionsConfigContent ? this.parseExtensionConfig(extensionsConfigContent) : undefined;
 		} catch (e) { /* Ignore */ }
 		return undefined;

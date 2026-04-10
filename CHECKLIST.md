@@ -45,3 +45,22 @@
 
 - [x] Fill the remaining schema/completion/editor-association gaps for local workspace and local folder settings files.
 - [x] Re-run the focused compile and test set after the local workspace file family changes.
+
+## Descriptor Trim
+
+- [x] Remove descriptor fields that were not pulling real weight after the descriptor-first refactor.
+- [x] Simplify the extension-side selector mirror without giving up the shared file-family shape.
+- [x] Re-run the focused compile and test set after the trim pass.
+
+## Reopened After Trim
+
+- [x] Re-run the focused compile and test set for the descriptor-first pass after the trim.
+- [x] Re-run critique pass 1: coherence, after the trim.
+- [x] Re-run critique pass 2: minimalism, after the trim.
+- [x] Re-run critique pass 3: style and mergeability, after the trim.
+
+## Checklist Rerun
+
+- [x] Re-run the focused typecheck set on the current worktree.
+- [x] Re-run the focused browser and integration tests on the current implementation.
+- [x] Re-check coherence, minimalism, and mergeability after the rerun.

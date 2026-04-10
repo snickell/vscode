@@ -13,7 +13,8 @@ import { Registry } from 'vs/platform/registry/common/platform';
 import { IWorkspaceContextService, WorkbenchState } from 'vs/platform/workspace/common/workspace';
 import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
 import { IConfigurationService, IConfigurationUpdateOptions, IConfigurationUpdateOverrides } from 'vs/platform/configuration/common/configuration';
-import { EXTENSIONS_CONFIGURATION_KEY, FOLDER_LOCAL_SETTINGS_PATH, FOLDER_SETTINGS_PATH, TASKS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, USER_STANDALONE_CONFIGURATION_DESCRIPTORS, FOLDER_SCOPES, getWorkspaceFileConfigurationDescriptor, getWorkspaceLocalConfigPath, type IWorkspaceFileConfigurationDescriptor } from 'vs/workbench/services/configuration/common/configuration';
+import { FOLDER_LOCAL_SETTINGS_PATH, FOLDER_SETTINGS_PATH, FOLDER_SCOPES, getWorkspaceLocalConfigPath } from 'vs/workbench/services/configuration/common/configuration';
+import { EXTENSIONS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, TASKS_CONFIGURATION_KEY, TASKS_DEFAULT, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, USER_STANDALONE_CONFIGURATION_DESCRIPTORS, getWorkspaceFileConfigurationDescriptor, type IWorkspaceFileConfigurationDescriptor } from 'vs/workbench/services/configuration/common/workspaceFileConfiguration';
 import { FileOperationError, FileOperationResult, IFileService } from 'vs/platform/files/common/files';
 import { IResolvedTextEditorModel, ITextModelService } from 'vs/editor/common/services/resolverService';
 import { IConfigurationRegistry, Extensions as ConfigurationExtensions, ConfigurationScope, keyFromOverrideIdentifiers, OVERRIDE_PROPERTY_REGEX } from 'vs/platform/configuration/common/configurationRegistry';
@@ -498,7 +499,7 @@ export class ConfigurationEditing {
 		const configurationValue = basename
 			.substr(0, basename.length - this.uriIdentityService.extUri.extname(resource).length)
 			.replace(/\.local$/i, '');
-		return getWorkspaceFileConfigurationDescriptor(configurationValue)?.defaultContent ?? '{}';
+		return configurationValue === TASKS_CONFIGURATION_KEY ? TASKS_DEFAULT : '{}';
 	}
 
 	private async resolveModelReference(resource: URI): Promise<IReference<IResolvedTextEditorModel>> {
@@ -603,14 +604,14 @@ export class ConfigurationEditing {
 
 				// Check for prefix
 				if (config.key === descriptor.key) {
-					const jsonPath = this.isWorkspaceConfigurationResource(resource) ? [descriptor.workspaceSection] : [];
+					const jsonPath = this.isWorkspaceConfigurationResource(resource) ? [descriptor.key] : [];
 					return { key: jsonPath[jsonPath.length - 1], jsonPath, value: config.value, resource: withNullAsUndefined(resource), workspaceStandAloneConfigurationKey: descriptor.key, target };
 				}
 
 				// Check for prefix.<setting>
 				const keyPrefix = `${descriptor.key}.`;
 				if (config.key.indexOf(keyPrefix) === 0) {
-					const jsonPath = this.isWorkspaceConfigurationResource(resource) ? [descriptor.workspaceSection, config.key.substr(keyPrefix.length)] : [config.key.substr(keyPrefix.length)];
+					const jsonPath = this.isWorkspaceConfigurationResource(resource) ? [descriptor.key, config.key.substr(keyPrefix.length)] : [config.key.substr(keyPrefix.length)];
 					return { key: jsonPath[jsonPath.length - 1], jsonPath, value: config.value, resource: withNullAsUndefined(resource), workspaceStandAloneConfigurationKey: descriptor.key, target };
 				}
 			}

@@ -37,11 +37,6 @@ export {
 	FOLDER_LOCAL_STANDALONE_CONFIGURATIONS,
 	WORKSPACE_STANDALONE_CONFIGURATION_KEYS,
 	USER_STANDALONE_CONFIGURATIONS,
-	getWorkspaceFileConfigurationDescriptor,
-	getWorkspaceExtensionRecommendationDescriptor,
-	type IWorkspaceFileConfigurationDescriptor,
-	type WorkspaceFileConfigurationKey,
-	type WorkspaceFileConfigurationFolderType,
 } from 'vs/workbench/services/configuration/common/workspaceFileConfiguration';
 
 export const APPLICATION_SCOPES = [ConfigurationScope.APPLICATION];

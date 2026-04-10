@@ -11,7 +11,7 @@ import { ResourceMap } from 'vs/base/common/map';
 import { WorkspaceFolder } from 'vs/platform/workspace/common/workspace';
 import { URI } from 'vs/base/common/uri';
 import { Workspace } from 'vs/platform/workspace/test/common/testWorkspace';
-import { WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS } from 'vs/workbench/services/configuration/common/configuration';
+import { WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS } from 'vs/workbench/services/configuration/common/workspaceFileConfiguration';
 
 suite('FolderSettingsModelParser', () => {
 
@@ -157,15 +157,14 @@ suite('Workspace File Configurations', () => {
 		assert.deepStrictEqual(
 			WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.map(descriptor => ({
 				key: descriptor.key,
-				workspaceSection: descriptor.workspaceSection,
 				shared: descriptor.folderSharedPath,
 				local: descriptor.folderLocalPath,
 			})),
 			[
-				{ key: 'settings', workspaceSection: 'settings', shared: '.vscode/settings.json', local: '.vscode/settings.local.json' },
-				{ key: 'tasks', workspaceSection: 'tasks', shared: '.vscode/tasks.json', local: '.vscode/tasks.local.json' },
-				{ key: 'launch', workspaceSection: 'launch', shared: '.vscode/launch.json', local: '.vscode/launch.local.json' },
-				{ key: 'extensions', workspaceSection: 'extensions', shared: '.vscode/extensions.json', local: '.vscode/extensions.local.json' },
+				{ key: 'settings', shared: '.vscode/settings.json', local: '.vscode/settings.local.json' },
+				{ key: 'tasks', shared: '.vscode/tasks.json', local: '.vscode/tasks.local.json' },
+				{ key: 'launch', shared: '.vscode/launch.json', local: '.vscode/launch.local.json' },
+				{ key: 'extensions', shared: '.vscode/extensions.json', local: '.vscode/extensions.local.json' },
 			]
 		);
 	});

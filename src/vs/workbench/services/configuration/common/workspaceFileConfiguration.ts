@@ -30,76 +30,45 @@ export type WorkspaceFileConfigurationKey =
 	| typeof TASKS_CONFIGURATION_KEY
 	| typeof LAUNCH_CONFIGURATION_KEY
 	| typeof EXTENSIONS_CONFIGURATION_KEY;
+type StandaloneWorkspaceFileConfigurationKey = Exclude<WorkspaceFileConfigurationKey, typeof SETTINGS_CONFIGURATION_KEY>;
 
 export type WorkspaceFileConfigurationFolderType = 'settings' | 'standalone';
 
 export interface IWorkspaceFileConfigurationDescriptor {
 	readonly key: WorkspaceFileConfigurationKey;
-	readonly workspaceSection: WorkspaceFileConfigurationKey;
 	readonly folderSharedPath: string;
 	readonly folderLocalPath: string;
 	readonly folderType: WorkspaceFileConfigurationFolderType;
-	readonly schemaId?: string;
-	readonly contributesToConfigurationModel: boolean;
-	readonly contributesToExtensionRecommendations: boolean;
-	readonly contributesToConfigurationEditing: boolean;
 	readonly userStandalonePath?: string;
-	readonly defaultContent: string;
+}
+
+function createStandaloneDescriptor(key: StandaloneWorkspaceFileConfigurationKey, userStandalonePath?: string): IWorkspaceFileConfigurationDescriptor {
+	const descriptor: IWorkspaceFileConfigurationDescriptor = {
+		key,
+		folderSharedPath: `${FOLDER_CONFIG_FOLDER_NAME}/${key}.json`,
+		folderLocalPath: `${FOLDER_CONFIG_FOLDER_NAME}/${key}.local.json`,
+		folderType: 'standalone',
+	};
+	if (userStandalonePath) {
+		descriptor.userStandalonePath = userStandalonePath;
+	}
+	return descriptor;
 }
 
 export const WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS: readonly IWorkspaceFileConfigurationDescriptor[] = [
 	{
 		key: SETTINGS_CONFIGURATION_KEY,
-		workspaceSection: SETTINGS_CONFIGURATION_KEY,
 		folderSharedPath: FOLDER_SETTINGS_PATH,
 		folderLocalPath: FOLDER_LOCAL_SETTINGS_PATH,
 		folderType: 'settings',
-		schemaId: folderSettingsSchemaId,
-		contributesToConfigurationModel: true,
-		contributesToExtensionRecommendations: false,
-		contributesToConfigurationEditing: true,
-		defaultContent: '{}',
 	},
-	{
-		key: TASKS_CONFIGURATION_KEY,
-		workspaceSection: TASKS_CONFIGURATION_KEY,
-		folderSharedPath: `${FOLDER_CONFIG_FOLDER_NAME}/${TASKS_CONFIGURATION_KEY}.json`,
-		folderLocalPath: `${FOLDER_CONFIG_FOLDER_NAME}/${TASKS_CONFIGURATION_KEY}.local.json`,
-		folderType: 'standalone',
-		schemaId: tasksSchemaId,
-		contributesToConfigurationModel: true,
-		contributesToExtensionRecommendations: false,
-		contributesToConfigurationEditing: true,
-		userStandalonePath: `${TASKS_CONFIGURATION_KEY}.json`,
-		defaultContent: TASKS_DEFAULT,
-	},
-	{
-		key: LAUNCH_CONFIGURATION_KEY,
-		workspaceSection: LAUNCH_CONFIGURATION_KEY,
-		folderSharedPath: `${FOLDER_CONFIG_FOLDER_NAME}/${LAUNCH_CONFIGURATION_KEY}.json`,
-		folderLocalPath: `${FOLDER_CONFIG_FOLDER_NAME}/${LAUNCH_CONFIGURATION_KEY}.local.json`,
-		folderType: 'standalone',
-		schemaId: launchSchemaId,
-		contributesToConfigurationModel: true,
-		contributesToExtensionRecommendations: false,
-		contributesToConfigurationEditing: true,
-		defaultContent: '{}',
-	},
-	{
-		key: EXTENSIONS_CONFIGURATION_KEY,
-		workspaceSection: EXTENSIONS_CONFIGURATION_KEY,
-		folderSharedPath: `${FOLDER_CONFIG_FOLDER_NAME}/${EXTENSIONS_CONFIGURATION_KEY}.json`,
-		folderLocalPath: `${FOLDER_CONFIG_FOLDER_NAME}/${EXTENSIONS_CONFIGURATION_KEY}.local.json`,
-		folderType: 'standalone',
-		contributesToConfigurationModel: true,
-		contributesToExtensionRecommendations: true,
-		contributesToConfigurationEditing: true,
-		defaultContent: '{}',
-	},
+	createStandaloneDescriptor(TASKS_CONFIGURATION_KEY, `${TASKS_CONFIGURATION_KEY}.json`),
+	createStandaloneDescriptor(LAUNCH_CONFIGURATION_KEY),
+	createStandaloneDescriptor(EXTENSIONS_CONFIGURATION_KEY),
 ] as const;
 
-export const WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => descriptor.folderType === 'standalone' && descriptor.contributesToConfigurationModel);
-export const USER_STANDALONE_CONFIGURATION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => !!descriptor.userStandalonePath && descriptor.contributesToConfigurationEditing);
+export const WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => descriptor.folderType === 'standalone');
+export const USER_STANDALONE_CONFIGURATION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => !!descriptor.userStandalonePath);
 export const WORKSPACE_STANDALONE_CONFIGURATION_KEYS = WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key);
 
 function toConfigurationPathMap(descriptors: readonly IWorkspaceFileConfigurationDescriptor[], pathKey: 'folderSharedPath' | 'folderLocalPath' | 'userStandalonePath'): Record<string, string> {
@@ -119,8 +88,4 @@ export const USER_STANDALONE_CONFIGURATIONS = toConfigurationPathMap(USER_STANDA
 
 export function getWorkspaceFileConfigurationDescriptor(key: string): IWorkspaceFileConfigurationDescriptor | undefined {
 	return WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.find(descriptor => descriptor.key === key);
-}
-
-export function getWorkspaceExtensionRecommendationDescriptor(): IWorkspaceFileConfigurationDescriptor {
-	return WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.find(descriptor => descriptor.contributesToExtensionRecommendations)!;
 }

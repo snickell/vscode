@@ -12,7 +12,8 @@ import { distinct } from 'vs/base/common/arrays';
 import { FileChangeType, FileChangesEvent, IFileService, whenProviderRegistered, FileOperationError, FileOperationResult, FileOperation, FileOperationEvent } from 'vs/platform/files/common/files';
 import { ConfigurationModel, ConfigurationModelParser, ConfigurationParseOptions, UserSettings } from 'vs/platform/configuration/common/configurationModels';
 import { WorkspaceConfigurationModelParser, StandaloneConfigurationModelParser } from 'vs/workbench/services/configuration/common/configurationModels';
-import { WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, TASKS_CONFIGURATION_KEY, FOLDER_LOCAL_SETTINGS_NAME, FOLDER_SETTINGS_NAME, IConfigurationCache, ConfigurationKey, REMOTE_MACHINE_SCOPES, FOLDER_SCOPES, WORKSPACE_SCOPES, getWorkspaceLocalConfigPath, type IWorkspaceFileConfigurationDescriptor } from 'vs/workbench/services/configuration/common/configuration';
+import { FOLDER_LOCAL_SETTINGS_NAME, FOLDER_SETTINGS_NAME, IConfigurationCache, ConfigurationKey, REMOTE_MACHINE_SCOPES, FOLDER_SCOPES, WORKSPACE_SCOPES, getWorkspaceLocalConfigPath } from 'vs/workbench/services/configuration/common/configuration';
+import { TASKS_CONFIGURATION_KEY, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, WORKSPACE_STANDALONE_CONFIGURATION_KEYS, type IWorkspaceFileConfigurationDescriptor } from 'vs/workbench/services/configuration/common/workspaceFileConfiguration';
 import { IStoredWorkspaceFolder } from 'vs/platform/workspaces/common/workspaces';
 import { WorkbenchState, IWorkspaceFolder, IWorkspaceIdentifier } from 'vs/platform/workspace/common/workspace';
 import { ConfigurationScope, Extensions, IConfigurationRegistry, OVERRIDE_PROPERTY_REGEX } from 'vs/platform/configuration/common/configurationRegistry';
@@ -1033,8 +1034,8 @@ export class FolderConfiguration extends Disposable {
 
 		this.scopes = WorkbenchState.WORKSPACE === this.workbenchState ? FOLDER_SCOPES : WORKSPACE_SCOPES;
 		this.configurationFolder = uriIdentityService.extUri.joinPath(workspaceFolder.uri, configFolderRelativePath);
-		this.cachedFolderConfiguration = new CachedFolderConfiguration(workspaceFolder.uri, configFolderRelativePath, FOLDER_SETTINGS_NAME, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key), { scopes: this.scopes, skipRestricted: this.isUntrusted() }, configurationCache);
-		this.cachedFolderLocalConfiguration = new CachedFolderConfiguration(workspaceFolder.uri, configFolderRelativePath, FOLDER_LOCAL_SETTINGS_NAME, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key), { scopes: this.scopes, skipRestricted: this.isUntrusted() }, configurationCache);
+		this.cachedFolderConfiguration = new CachedFolderConfiguration(workspaceFolder.uri, configFolderRelativePath, FOLDER_SETTINGS_NAME, WORKSPACE_STANDALONE_CONFIGURATION_KEYS, { scopes: this.scopes, skipRestricted: this.isUntrusted() }, configurationCache);
+		this.cachedFolderLocalConfiguration = new CachedFolderConfiguration(workspaceFolder.uri, configFolderRelativePath, FOLDER_LOCAL_SETTINGS_NAME, WORKSPACE_STANDALONE_CONFIGURATION_KEYS, { scopes: this.scopes, skipRestricted: this.isUntrusted() }, configurationCache);
 		if (useCache && this.configurationCache.needsCaching(workspaceFolder.uri)) {
 			this.folderConfiguration = this.cachedFolderConfiguration;
 			this.folderLocalConfiguration = this.cachedFolderLocalConfiguration;
