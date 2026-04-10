@@ -49,3 +49,15 @@
 - 2026-04-09: File-family critique pass 1 kept the branch story coherent across settings, tasks, launch, and extensions instead of leaving `extensions` on a separate shared-only path.
 - 2026-04-09: File-family critique pass 2 removed a contract regression in `getExtensionsConfigs()` by returning only real config sources for aggregation while still exposing empty targets to add/remove flows.
 - 2026-04-09: File-family critique pass 3 kept `git diff --check` clean and verified that the main checkout used for focused validation had no tracked changes.
+- 2026-04-09: Reopened the branch-local plan for a descriptor-first refactor so the local workspace file family is described once in typed metadata and consumed by configuration loading, editing, recommendations, and extension-side runtime selectors where practical.
+- 2026-04-09: Added `src/vs/workbench/services/configuration/common/workspaceFileConfiguration.ts` as the canonical typed description of the local workspace file family, with shared/local folder paths, workspace section keys, default content, and participation flags.
+- 2026-04-09: Rewired `configuration.ts`, `configurationModels.ts`, `browser/configuration.ts`, `configurationEditing.ts`, and `workspaceExtensionsConfig.ts` to consume descriptor-backed metadata instead of separate loose path maps and per-path branches.
+- 2026-04-09: Kept `extensions/configuration-editing` on a local helper table that mirrors the descriptor shape, rather than introducing a workbench-to-extension import edge.
+- 2026-04-09: Added a descriptor regression suite to `src/vs/workbench/services/configuration/test/common/configurationModels.test.ts`.
+- 2026-04-09: Re-ran `tsc -p extensions/configuration-editing/tsconfig.json --noEmit --pretty false`; it is clean.
+- 2026-04-09: Re-ran `tsc -p src/tsconfig.json --noEmit --pretty false`; the only failures remain the pre-existing `src/vs/platform/environment/test/node/argv.test.ts` errors at lines 116 and 146.
+- 2026-04-09: Re-transpiled the touched worktree files into `/Users/seth/src/vscode/out` and `/Users/seth/src/vscode/extensions/configuration-editing/out`, then re-ran the focused unit/browser suite and the full configuration-editing integration suite from the main checkout.
+- 2026-04-09: Focused validation passed 2 descriptor regression tests, 4 local configuration-editing write tests, 6 local workspace configuration-service tests, 1 ext-host Local Workspace inspect test, 2 local extension-recommendation tests, and 18 configuration-editing integration tests.
+- 2026-04-09: Descriptor critique pass 1 kept the refactor on one file-family description instead of separate loader and recommendation matrices.
+- 2026-04-09: Descriptor critique pass 2 removed an unused runtime-selector export so the descriptor only carries metadata that the branch actually needs.
+- 2026-04-09: Descriptor critique pass 3 removed the temporary worktree dependency symlinks, kept `git diff --check` clean, and left the main checkout free of tracked changes after validation.

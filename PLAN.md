@@ -2,7 +2,9 @@
 
 ## Intent
 
-Extend the first-class local-workspace mechanism from settings-only coverage to the related workspace file family:
+Make the local workspace file family descriptor-first.
+
+The branch already supports:
 
 - `.vscode/settings.local.json`
 - `.vscode/tasks.local.json`
@@ -10,47 +12,27 @@ Extend the first-class local-workspace mechanism from settings-only coverage to 
 - `.vscode/extensions.local.json`
 - `*.code-workspace.local` sections for `settings`, `tasks`, `launch`, and `extensions`
 
-Keep the product story the same:
+The remaining work is not new behavior first. It is shared structure first.
 
-- shared workspace state remains shared
-- local workspace state remains local
-- provenance stays explicit
-- writes, inspect surfaces, and UI affordances reflect the split where those surfaces exist
+The code should describe the file family once, in one typed internal table, and let the existing readers, writers, and recommendation paths consume that description instead of each carrying partial filename and key knowledge.
 
-## Implemented Base
+## Constraints
 
-- adds `WORKSPACE_LOCAL` and `WORKSPACE_FOLDER_LOCAL` to configuration targets and inspect state
-- stores workspace-local and folder-local settings layers distinctly in core configuration state
-- loads and watches `.vscode/settings.local.json` and `*.code-workspace.local`
-- ignores `folders` in local workspace files by continuing to derive workspace folders only from the shared workspace file
-- preserves restricted-setting trust filtering for local files
-- routes explicit settings writes to local workspace and local folder files
-- exposes local settings through preferences services, commands, split-editor resolution, and Settings UI target selection
-- wires JSONC language, schema associations, and completion providers for local settings files
-- extends ext-host inspect data and `vscode.d.ts`
-
-## Refactor Direction
-
-Do not bolt the new files on one at a time. The implementation should converge on one local-workspace file family mechanism.
-
-The refactor should unify, where it genuinely reduces duplication:
-
-- shared and local workspace file discovery
-- load, watch, and cache plumbing
-- shared-versus-local file pairing for saved workspaces and folder workspaces
-- standalone workspace file handling for `tasks`, `launch`, and `extensions`
-- schema, editor-association, and completion registration
-- write routing for shared and local workspace file family members
+- keep shared state shared and local state local
+- keep provenance explicit in inspect, read, and write paths
+- keep workspace-folder membership derived only from the shared workspace file
+- keep `Local Workspace Settings` and `Local Folder Settings` wording unchanged
+- keep the extension manifest static; no code generation
+- optimize for upstream mergeability, not abstraction theater
 
 ## Planned Work
 
-- completed with a declarative standalone-file map shared by the workspace parser, folder loader, and write-routing paths
-- completed for folder-local file discovery, caching, and merge plumbing across `tasks.local.json`, `launch.local.json`, and `extensions.local.json`
-- completed for saved-workspace local parsing and consolidation across `tasks`, `launch`, and `extensions` in `*.code-workspace.local`
-- completed for local write routing of `tasks`, `launch`, and `extensions`
-- completed for inspect and effective-value behavior of `launch`, `tasks`, and `extensions`
-- completed for schema associations, editor registration, language selectors, and completions across the local workspace file family
-- completed for focused tests across configuration, configuration editing, configuration-editing extension behavior, and extension recommendations
+- completed with `src/vs/workbench/services/configuration/common/workspaceFileConfiguration.ts` as the canonical typed descriptor for `settings`, `tasks`, `launch`, and `extensions`
+- completed by deriving standalone workspace and folder-local resource knowledge from that descriptor
+- completed by rewiring workspace parser, folder loader, cache plumbing, and write routing to consume descriptor-backed helpers
+- completed by rewiring extension recommendation shared/local target discovery to consume the same descriptor-backed metadata
+- completed by mirroring the descriptor shape in `extensions/configuration-editing` runtime selectors without introducing a workbench-to-extension import edge
+- completed by adding a regression test that asserts the supported file family and its shared/local resource mapping
 
 ## Validation
 
@@ -58,28 +40,28 @@ Completed:
 
 - `tsc -p extensions/configuration-editing/tsconfig.json --noEmit --pretty false`
 - `tsc -p src/tsconfig.json --noEmit --pretty false` with only the pre-existing `src/vs/platform/environment/test/node/argv.test.ts` failures at lines 116 and 146
+- focused unit/browser runs covering:
+  - descriptor regression tests
+  - local configuration editing writes
+  - local workspace and local folder configuration service behavior
+  - ext-host Local Workspace inspect behavior
+  - local extension recommendation prompts
 - configuration-editing integration suite with 18 passing tests
-- targeted browser run from `/Users/seth/src/vscode` with 14 passing local-workspace tests
-- targeted electron-sandbox run for local extension recommendations with 2 passing tests
 
 ## Critique Pass 1: coherence
 
 Completed.
 
-- the branch now reads as one first-class local-workspace file family, not settings support plus side paths
-- `extensions.local.json` and `*.code-workspace.local` recommendation handling now uses the same shared/local distinction as the rest of the pass
+The file family is now described once and consumed in the loader, writer, parser, and recommendation paths. `extensions` no longer carries its own path matrix.
 
 ## Critique Pass 2: minimalism
 
 Completed.
 
-- the refactor stayed on declarative file maps and reused existing standalone-model and JSON-editing paths
-- the recommendation service fix preserved its prior `getExtensionsConfigs()` contract instead of leaking placeholder entries
+The refactor removes the loose path maps and the repeated standalone-resource routing logic. It does not add a new service layer, code generation, or manifest synthesis.
 
 ## Critique Pass 3: style and mergeability
 
 Completed.
 
-- naming follows existing VS Code file and settings conventions
-- `git diff --check` is clean
-- the main checkout used for focused validation remained free of tracked changes
+The extension manifest stayed static, the extension runtime kept a local helper instead of importing workbench internals, the main checkout stayed free of tracked changes after focused validation, and `git diff --check` is clean.

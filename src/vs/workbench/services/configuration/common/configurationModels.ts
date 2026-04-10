@@ -12,7 +12,7 @@ import { ResourceMap } from 'vs/base/common/map';
 import { URI } from 'vs/base/common/uri';
 import { isBoolean } from 'vs/base/common/types';
 import { distinct } from 'vs/base/common/arrays';
-import { EXTENSIONS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, TASKS_CONFIGURATION_KEY, WORKSPACE_STANDALONE_CONFIGURATION_KEYS } from 'vs/workbench/services/configuration/common/configuration';
+import { EXTENSIONS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, TASKS_CONFIGURATION_KEY, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS } from 'vs/workbench/services/configuration/common/configuration';
 
 export class WorkspaceConfigurationModelParser extends ConfigurationModelParser {
 
@@ -24,8 +24,8 @@ export class WorkspaceConfigurationModelParser extends ConfigurationModelParser 
 	constructor(name: string) {
 		super(name);
 		this._settingsModelParser = new ConfigurationModelParser(name);
-		for (const key of WORKSPACE_STANDALONE_CONFIGURATION_KEYS) {
-			this._standaloneModels.set(key, new ConfigurationModel());
+		for (const descriptor of WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS) {
+			this._standaloneModels.set(descriptor.key, new ConfigurationModel());
 		}
 	}
 
@@ -54,7 +54,7 @@ export class WorkspaceConfigurationModelParser extends ConfigurationModelParser 
 	}
 
 	get standaloneConfigurationModels(): ConfigurationModel[] {
-		return WORKSPACE_STANDALONE_CONFIGURATION_KEYS.map(key => this.getStandaloneModel(key));
+		return WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.map(descriptor => this.getStandaloneModel(descriptor.key));
 	}
 
 	reparseWorkspaceSettings(configurationParseOptions: ConfigurationParseOptions): void {
@@ -69,8 +69,8 @@ export class WorkspaceConfigurationModelParser extends ConfigurationModelParser 
 		this._folders = (raw['folders'] || []) as IStoredWorkspaceFolder[];
 		this._transient = isBoolean(raw['transient']) && raw['transient'];
 		this._settingsModelParser.parseRaw(raw['settings'], configurationParseOptions);
-		for (const key of WORKSPACE_STANDALONE_CONFIGURATION_KEYS) {
-			this._standaloneModels.set(key, this.createConfigurationModelFrom(raw, key));
+		for (const descriptor of WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS) {
+			this._standaloneModels.set(descriptor.key, this.createConfigurationModelFrom(raw, descriptor.workspaceSection));
 		}
 		return super.doParseRaw(raw, configurationParseOptions);
 	}

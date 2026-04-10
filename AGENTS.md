@@ -4,7 +4,7 @@ Reload this file on restart. Reload `SPEC.md`, `PLAN.md`, `CHECKLIST.md`, and `N
 
 ## Task
 
-Implement first-class Local Workspace state across the supported workspace file family from `SPEC.md`.
+Implement the canonical descriptor-first refactor for first-class Local Workspace state across the supported workspace file family from `SPEC.md`.
 
 ## Working Rules
 

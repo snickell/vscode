@@ -27,6 +27,16 @@
 - [x] Extend schema, editor-association, and completion registration across the local workspace file family.
 - [x] Add or update focused tests for local tasks, launch, and extensions across folder and saved workspaces.
 - [x] Re-run validation for the local workspace file family pass.
+- [x] Rewrite `PLAN.md` around the canonical local workspace file-family descriptor refactor.
+- [x] Update `AGENTS.md` so restart context names the descriptor-first pass.
+- [x] Introduce one typed canonical descriptor for `settings`, `tasks`, `launch`, and `extensions`.
+- [x] Derive shared/local standalone resource metadata from the descriptor in configuration common code.
+- [x] Rewire workspace parsing, folder loading, and cache plumbing to use descriptor-backed helpers.
+- [x] Rewire configuration editing target validation, resource routing, and standalone-file labeling to use descriptor-backed metadata.
+- [x] Rewire workspace extension recommendation shared/local target enumeration to use the descriptor-backed metadata.
+- [x] Reuse the descriptor shape in `extensions/configuration-editing` runtime selectors or helper tables where practical.
+- [x] Add a regression test for the canonical descriptor and adjust focused tests if the refactor changes assertions.
+- [x] Re-run the focused compile and test set for the descriptor-first pass.
 - [x] Critique pass 1: coherence.
 - [x] Critique pass 2: minimalism.
 - [x] Critique pass 3: style and mergeability.

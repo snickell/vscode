@@ -19,10 +19,11 @@ import { localize } from 'vs/nls';
 import { URI } from 'vs/base/common/uri';
 import { IJSONEditingService, IJSONValue } from 'vs/workbench/services/configuration/common/jsonEditing';
 import { basename } from 'vs/base/common/resources';
-import { getWorkspaceLocalConfigPath } from 'vs/workbench/services/configuration/common/configuration';
+import { getWorkspaceExtensionRecommendationDescriptor, getWorkspaceLocalConfigPath } from 'vs/workbench/services/configuration/common/configuration';
 
-export const EXTENSIONS_CONFIG = '.vscode/extensions.json';
-export const EXTENSIONS_LOCAL_CONFIG = '.vscode/extensions.local.json';
+const extensionsConfigurationDescriptor = getWorkspaceExtensionRecommendationDescriptor();
+export const EXTENSIONS_CONFIG = extensionsConfigurationDescriptor.folderSharedPath;
+export const EXTENSIONS_LOCAL_CONFIG = extensionsConfigurationDescriptor.folderLocalPath;
 
 export interface IExtensionsConfigContent {
 	recommendations?: string[];
@@ -71,7 +72,7 @@ export class WorkspaceExtensionsConfigService extends Disposable implements IWor
 		this._register(fileService.onDidFilesChange(e => {
 			const workspace = workspaceContextService.getWorkspace();
 			if ((workspace.configuration && (e.affects(workspace.configuration) || e.affects(getWorkspaceLocalConfigPath(workspace.configuration))))
-				|| workspace.folders.some(folder => e.affects(folder.toResource(EXTENSIONS_CONFIG)) || e.affects(folder.toResource(EXTENSIONS_LOCAL_CONFIG)))
+				|| workspace.folders.some(folder => e.affects(folder.toResource(extensionsConfigurationDescriptor.folderSharedPath)) || e.affects(folder.toResource(extensionsConfigurationDescriptor.folderLocalPath)))
 			) {
 				this._onDidChangeExtensionsConfigs.fire();
 			}
@@ -188,31 +189,31 @@ export class WorkspaceExtensionsConfigService extends Disposable implements IWor
 		if (workspace.configuration) {
 			const workspaceExtensionsConfigContent = await this.resolveWorkspaceExtensionConfig(workspace.configuration);
 			if (includeEmpty || workspaceExtensionsConfigContent) {
-				result.push({ kind: 'workspace', resource: workspace.configuration, jsonPathPrefix: ['extensions'], content: workspaceExtensionsConfigContent ?? {} });
+				result.push({ kind: 'workspace', resource: workspace.configuration, jsonPathPrefix: [extensionsConfigurationDescriptor.workspaceSection], content: workspaceExtensionsConfigContent ?? {} });
 			}
 			const workspaceLocalConfigurationResource = getWorkspaceLocalConfigPath(workspace.configuration);
 			const workspaceLocalExtensionsConfigContent = await this.resolveWorkspaceExtensionConfig(workspaceLocalConfigurationResource);
 			if (includeEmpty || workspaceLocalExtensionsConfigContent) {
-				result.push({ kind: 'workspaceLocal', resource: workspaceLocalConfigurationResource, jsonPathPrefix: ['extensions'], content: workspaceLocalExtensionsConfigContent ?? {} });
+				result.push({ kind: 'workspaceLocal', resource: workspaceLocalConfigurationResource, jsonPathPrefix: [extensionsConfigurationDescriptor.workspaceSection], content: workspaceLocalExtensionsConfigContent ?? {} });
 			}
 		}
 
 		for (const workspaceFolder of workspace.folders) {
-			const workspaceFolderExtensionsConfigContent = await this.resolveWorkspaceFolderExtensionConfig(workspaceFolder, false);
+			const workspaceFolderExtensionsConfigContent = await this.resolveWorkspaceFolderExtensionConfig(workspaceFolder, extensionsConfigurationDescriptor.folderSharedPath);
 			if (includeEmpty || workspaceFolderExtensionsConfigContent) {
 				result.push({
 					kind: 'workspaceFolder',
-					resource: workspaceFolder.toResource(EXTENSIONS_CONFIG),
+					resource: workspaceFolder.toResource(extensionsConfigurationDescriptor.folderSharedPath),
 					jsonPathPrefix: [],
 					content: workspaceFolderExtensionsConfigContent ?? {},
 					workspaceFolder
 				});
 			}
-			const workspaceFolderLocalExtensionsConfigContent = await this.resolveWorkspaceFolderExtensionConfig(workspaceFolder, true);
+			const workspaceFolderLocalExtensionsConfigContent = await this.resolveWorkspaceFolderExtensionConfig(workspaceFolder, extensionsConfigurationDescriptor.folderLocalPath);
 			if (includeEmpty || workspaceFolderLocalExtensionsConfigContent) {
 				result.push({
 					kind: 'workspaceFolderLocal',
-					resource: workspaceFolder.toResource(EXTENSIONS_LOCAL_CONFIG),
+					resource: workspaceFolder.toResource(extensionsConfigurationDescriptor.folderLocalPath),
 					jsonPathPrefix: [],
 					content: workspaceFolderLocalExtensionsConfigContent ?? {},
 					workspaceFolder
@@ -226,15 +227,15 @@ export class WorkspaceExtensionsConfigService extends Disposable implements IWor
 	private async resolveWorkspaceExtensionConfig(workspaceConfigurationResource: URI): Promise<IExtensionsConfigContent | undefined> {
 		try {
 			const content = await this.fileService.readFile(workspaceConfigurationResource);
-			const extensionsConfigContent = <IExtensionsConfigContent | undefined>parse(content.value.toString())['extensions'];
+			const extensionsConfigContent = <IExtensionsConfigContent | undefined>parse(content.value.toString())[extensionsConfigurationDescriptor.workspaceSection];
 			return extensionsConfigContent ? this.parseExtensionConfig(extensionsConfigContent) : undefined;
 		} catch (e) { /* Ignore */ }
 		return undefined;
 	}
 
-	private async resolveWorkspaceFolderExtensionConfig(workspaceFolder: IWorkspaceFolder, local: boolean): Promise<IExtensionsConfigContent | undefined> {
+	private async resolveWorkspaceFolderExtensionConfig(workspaceFolder: IWorkspaceFolder, relativePath: string): Promise<IExtensionsConfigContent | undefined> {
 		try {
-			const content = await this.fileService.readFile(workspaceFolder.toResource(local ? EXTENSIONS_LOCAL_CONFIG : EXTENSIONS_CONFIG));
+			const content = await this.fileService.readFile(workspaceFolder.toResource(relativePath));
 			const extensionsConfigContent = <IExtensionsConfigContent>parse(content.value.toString());
 			return this.parseExtensionConfig(extensionsConfigContent);
 		} catch (e) { /* ignore */ }

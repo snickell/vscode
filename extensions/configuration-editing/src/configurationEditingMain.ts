@@ -9,25 +9,34 @@ import { SettingsDocument } from './settingsDocumentHelper';
 import { provideInstalledExtensionProposals } from './extensionsProposals';
 import './importExportProfiles';
 
-const settingsSelector: vscode.DocumentSelector = [
-	{ language: 'jsonc', pattern: '**/settings.json' },
-	{ language: 'jsonc', pattern: '**/settings.local.json' },
+type WorkspaceConfigurationFileKey = 'settings' | 'launch' | 'tasks' | 'extensions';
+
+interface IWorkspaceConfigurationFileDescriptor {
+	readonly key: WorkspaceConfigurationFileKey;
+	readonly contributesVariableCompletions: boolean;
+	readonly contributesExtensionCompletions: boolean;
+}
+
+const workspaceConfigurationFileDescriptors: readonly IWorkspaceConfigurationFileDescriptor[] = [
+	{ key: 'settings', contributesVariableCompletions: false, contributesExtensionCompletions: false },
+	{ key: 'launch', contributesVariableCompletions: true, contributesExtensionCompletions: false },
+	{ key: 'tasks', contributesVariableCompletions: true, contributesExtensionCompletions: false },
+	{ key: 'extensions', contributesVariableCompletions: false, contributesExtensionCompletions: true },
 ];
 
-const launchSelector: vscode.DocumentSelector = [
-	{ language: 'jsonc', pattern: '**/launch.json' },
-	{ language: 'jsonc', pattern: '**/launch.local.json' },
-];
+function createFolderConfigurationSelector(key: WorkspaceConfigurationFileKey): vscode.DocumentSelector {
+	return [
+		{ language: 'jsonc', pattern: `**/${key}.json` },
+		{ language: 'jsonc', pattern: `**/${key}.local.json` },
+	];
+}
 
-const tasksSelector: vscode.DocumentSelector = [
-	{ language: 'jsonc', pattern: '**/tasks.json' },
-	{ language: 'jsonc', pattern: '**/tasks.local.json' },
-];
-
-const extensionsSelector: vscode.DocumentSelector = [
-	{ language: 'jsonc', pattern: '**/extensions.json' },
-	{ language: 'jsonc', pattern: '**/extensions.local.json' },
-];
+const settingsSelector = createFolderConfigurationSelector('settings');
+const launchSelector = createFolderConfigurationSelector('launch');
+const tasksSelector = createFolderConfigurationSelector('tasks');
+const extensionsSelector = createFolderConfigurationSelector('extensions');
+const workspaceVariableCompletionSections = workspaceConfigurationFileDescriptors.filter(descriptor => descriptor.contributesVariableCompletions).map(descriptor => descriptor.key);
+const workspaceExtensionsCompletionSection = workspaceConfigurationFileDescriptors.find(descriptor => descriptor.contributesExtensionCompletions)!.key;
 
 const workspaceConfigurationSelector: vscode.DocumentSelector = [
 	{ language: 'jsonc', pattern: '**/*.code-workspace' },
@@ -68,7 +77,7 @@ function registerVariableCompletions(selector: vscode.DocumentSelector): vscode.
 		provideCompletionItems(document, position, _token) {
 			const location = getLocation(document.getText(), document.offsetAt(position));
 			if (isCompletingInsidePropertyStringValue(document, location, position)) {
-				if (isWorkspaceConfigurationDocument(document) && !isLocationInsideTopLevelProperty(location, ['launch', 'tasks'])) {
+				if (isWorkspaceConfigurationDocument(document) && !isLocationInsideTopLevelProperty(location, workspaceVariableCompletionSections)) {
 					return [];
 				}
 
@@ -152,9 +161,9 @@ function registerExtensionsCompletionsInWorkspaceConfigurationDocument(): vscode
 	return vscode.languages.registerCompletionItemProvider(workspaceConfigurationSelector, {
 		provideCompletionItems(document, position, _token) {
 			const location = getLocation(document.getText(), document.offsetAt(position));
-			if (location.path[0] === 'extensions' && location.path[1] === 'recommendations') {
+			if (location.path[0] === workspaceExtensionsCompletionSection && location.path[1] === 'recommendations') {
 				const range = getReplaceRange(document, location, position);
-				const extensionsContent = <IExtensionsContent>parse(document.getText())['extensions'];
+				const extensionsContent = <IExtensionsContent>parse(document.getText())[workspaceExtensionsCompletionSection];
 				return provideInstalledExtensionProposals(extensionsContent && extensionsContent.recommendations || [], '', range, false);
 			}
 			return [];

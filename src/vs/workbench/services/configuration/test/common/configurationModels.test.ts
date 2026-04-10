@@ -11,6 +11,7 @@ import { ResourceMap } from 'vs/base/common/map';
 import { WorkspaceFolder } from 'vs/platform/workspace/common/workspace';
 import { URI } from 'vs/base/common/uri';
 import { Workspace } from 'vs/platform/workspace/test/common/testWorkspace';
+import { WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS } from 'vs/workbench/services/configuration/common/configuration';
 
 suite('FolderSettingsModelParser', () => {
 
@@ -135,6 +136,38 @@ suite('StandaloneConfigurationModelParser', () => {
 		expected['tasks']['version'] = '1.1.1';
 		expected['tasks']['tasks'] = [];
 		assert.deepStrictEqual(testObject.configurationModel.contents, expected);
+	});
+
+});
+
+suite('Workspace File Configurations', () => {
+
+	test('canonical descriptor enumerates supported file family', () => {
+		assert.deepStrictEqual(
+			WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key),
+			['settings', 'tasks', 'launch', 'extensions']
+		);
+		assert.deepStrictEqual(
+			WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key),
+			['tasks', 'launch', 'extensions']
+		);
+	});
+
+	test('canonical descriptor yields expected workspace sections and folder paths', () => {
+		assert.deepStrictEqual(
+			WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.map(descriptor => ({
+				key: descriptor.key,
+				workspaceSection: descriptor.workspaceSection,
+				shared: descriptor.folderSharedPath,
+				local: descriptor.folderLocalPath,
+			})),
+			[
+				{ key: 'settings', workspaceSection: 'settings', shared: '.vscode/settings.json', local: '.vscode/settings.local.json' },
+				{ key: 'tasks', workspaceSection: 'tasks', shared: '.vscode/tasks.json', local: '.vscode/tasks.local.json' },
+				{ key: 'launch', workspaceSection: 'launch', shared: '.vscode/launch.json', local: '.vscode/launch.local.json' },
+				{ key: 'extensions', workspaceSection: 'extensions', shared: '.vscode/extensions.json', local: '.vscode/extensions.local.json' },
+			]
+		);
 	});
 
 });

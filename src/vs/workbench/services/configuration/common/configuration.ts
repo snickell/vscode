@@ -11,21 +11,38 @@ import { Event } from 'vs/base/common/event';
 import { ResourceMap } from 'vs/base/common/map';
 import { basename, dirname, joinPath } from 'vs/base/common/resources';
 import { IAnyWorkspaceIdentifier } from 'vs/platform/workspace/common/workspace';
-
-export const FOLDER_CONFIG_FOLDER_NAME = '.vscode';
-export const FOLDER_SETTINGS_NAME = 'settings';
-export const FOLDER_SETTINGS_PATH = `${FOLDER_CONFIG_FOLDER_NAME}/${FOLDER_SETTINGS_NAME}.json`;
-export const FOLDER_LOCAL_SETTINGS_NAME = 'settings.local';
-export const FOLDER_LOCAL_SETTINGS_PATH = `${FOLDER_CONFIG_FOLDER_NAME}/${FOLDER_LOCAL_SETTINGS_NAME}.json`;
-
-export const defaultSettingsSchemaId = 'vscode://schemas/settings/default';
-export const userSettingsSchemaId = 'vscode://schemas/settings/user';
-export const profileSettingsSchemaId = 'vscode://schemas/settings/profile';
-export const machineSettingsSchemaId = 'vscode://schemas/settings/machine';
-export const workspaceSettingsSchemaId = 'vscode://schemas/settings/workspace';
-export const folderSettingsSchemaId = 'vscode://schemas/settings/folder';
-export const launchSchemaId = 'vscode://schemas/launch';
-export const tasksSchemaId = 'vscode://schemas/tasks';
+export {
+	defaultSettingsSchemaId,
+	userSettingsSchemaId,
+	profileSettingsSchemaId,
+	machineSettingsSchemaId,
+	workspaceSettingsSchemaId,
+	folderSettingsSchemaId,
+	launchSchemaId,
+	tasksSchemaId,
+	FOLDER_CONFIG_FOLDER_NAME,
+	FOLDER_SETTINGS_NAME,
+	FOLDER_SETTINGS_PATH,
+	FOLDER_LOCAL_SETTINGS_NAME,
+	FOLDER_LOCAL_SETTINGS_PATH,
+	SETTINGS_CONFIGURATION_KEY,
+	TASKS_CONFIGURATION_KEY,
+	LAUNCH_CONFIGURATION_KEY,
+	EXTENSIONS_CONFIGURATION_KEY,
+	TASKS_DEFAULT,
+	WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS,
+	WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS,
+	USER_STANDALONE_CONFIGURATION_DESCRIPTORS,
+	WORKSPACE_STANDALONE_CONFIGURATIONS,
+	FOLDER_LOCAL_STANDALONE_CONFIGURATIONS,
+	WORKSPACE_STANDALONE_CONFIGURATION_KEYS,
+	USER_STANDALONE_CONFIGURATIONS,
+	getWorkspaceFileConfigurationDescriptor,
+	getWorkspaceExtensionRecommendationDescriptor,
+	type IWorkspaceFileConfigurationDescriptor,
+	type WorkspaceFileConfigurationKey,
+	type WorkspaceFileConfigurationFolderType,
+} from 'vs/workbench/services/configuration/common/workspaceFileConfiguration';
 
 export const APPLICATION_SCOPES = [ConfigurationScope.APPLICATION];
 export const PROFILE_SCOPES = [ConfigurationScope.MACHINE, ConfigurationScope.WINDOW, ConfigurationScope.RESOURCE, ConfigurationScope.LANGUAGE_OVERRIDABLE, ConfigurationScope.MACHINE_OVERRIDABLE];
@@ -34,22 +51,6 @@ export const LOCAL_MACHINE_SCOPES = [ConfigurationScope.APPLICATION, ...LOCAL_MA
 export const REMOTE_MACHINE_SCOPES = [ConfigurationScope.MACHINE, ConfigurationScope.WINDOW, ConfigurationScope.RESOURCE, ConfigurationScope.LANGUAGE_OVERRIDABLE, ConfigurationScope.MACHINE_OVERRIDABLE];
 export const WORKSPACE_SCOPES = [ConfigurationScope.WINDOW, ConfigurationScope.RESOURCE, ConfigurationScope.LANGUAGE_OVERRIDABLE, ConfigurationScope.MACHINE_OVERRIDABLE];
 export const FOLDER_SCOPES = [ConfigurationScope.RESOURCE, ConfigurationScope.LANGUAGE_OVERRIDABLE, ConfigurationScope.MACHINE_OVERRIDABLE];
-
-export const TASKS_CONFIGURATION_KEY = 'tasks';
-export const LAUNCH_CONFIGURATION_KEY = 'launch';
-export const EXTENSIONS_CONFIGURATION_KEY = 'extensions';
-
-export const WORKSPACE_STANDALONE_CONFIGURATIONS: Record<string, string> = Object.create(null);
-WORKSPACE_STANDALONE_CONFIGURATIONS[TASKS_CONFIGURATION_KEY] = `${FOLDER_CONFIG_FOLDER_NAME}/${TASKS_CONFIGURATION_KEY}.json`;
-WORKSPACE_STANDALONE_CONFIGURATIONS[LAUNCH_CONFIGURATION_KEY] = `${FOLDER_CONFIG_FOLDER_NAME}/${LAUNCH_CONFIGURATION_KEY}.json`;
-WORKSPACE_STANDALONE_CONFIGURATIONS[EXTENSIONS_CONFIGURATION_KEY] = `${FOLDER_CONFIG_FOLDER_NAME}/${EXTENSIONS_CONFIGURATION_KEY}.json`;
-export const FOLDER_LOCAL_STANDALONE_CONFIGURATIONS: Record<string, string> = Object.create(null);
-FOLDER_LOCAL_STANDALONE_CONFIGURATIONS[TASKS_CONFIGURATION_KEY] = `${FOLDER_CONFIG_FOLDER_NAME}/${TASKS_CONFIGURATION_KEY}.local.json`;
-FOLDER_LOCAL_STANDALONE_CONFIGURATIONS[LAUNCH_CONFIGURATION_KEY] = `${FOLDER_CONFIG_FOLDER_NAME}/${LAUNCH_CONFIGURATION_KEY}.local.json`;
-FOLDER_LOCAL_STANDALONE_CONFIGURATIONS[EXTENSIONS_CONFIGURATION_KEY] = `${FOLDER_CONFIG_FOLDER_NAME}/${EXTENSIONS_CONFIGURATION_KEY}.local.json`;
-export const WORKSPACE_STANDALONE_CONFIGURATION_KEYS = Object.keys(WORKSPACE_STANDALONE_CONFIGURATIONS);
-export const USER_STANDALONE_CONFIGURATIONS: Record<string, string> = Object.create(null);
-USER_STANDALONE_CONFIGURATIONS[TASKS_CONFIGURATION_KEY] = `${TASKS_CONFIGURATION_KEY}.json`;
 
 export type ConfigurationKey = { type: 'defaults' | 'user' | 'workspaces' | 'folder'; key: string };
 
@@ -95,8 +96,6 @@ export interface IWorkbenchConfigurationService extends IConfigurationService {
 	 */
 	initialize(arg: IAnyWorkspaceIdentifier): Promise<void>;
 }
-
-export const TASKS_DEFAULT = '{\n\t\"version\": \"2.0.0\",\n\t\"tasks\": []\n}';
 
 export function getWorkspaceLocalConfigPath(workspaceConfigPath: URI): URI {
 	return joinPath(dirname(workspaceConfigPath), `${basename(workspaceConfigPath)}.local`);
