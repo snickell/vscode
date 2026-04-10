@@ -64,3 +64,10 @@
 - [x] Re-run the focused typecheck set on the current worktree.
 - [x] Re-run the focused browser and integration tests on the current implementation.
 - [x] Re-check coherence, minimalism, and mergeability after the rerun.
+
+## Tasteful Polish
+
+- [x] Trim small bits of repetition in the descriptor helper without changing the file-family shape.
+- [x] Make the extension recommendation target enumeration read a little cleaner.
+- [x] Make the configuration-editing selector and completion helpers a little plainer.
+- [x] Re-run the focused validation slice after the polish pass.

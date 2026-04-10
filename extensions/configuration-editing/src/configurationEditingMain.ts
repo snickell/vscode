@@ -22,7 +22,7 @@ const settingsSelector = createFolderConfigurationSelector('settings');
 const launchSelector = createFolderConfigurationSelector('launch');
 const tasksSelector = createFolderConfigurationSelector('tasks');
 const extensionsSelector = createFolderConfigurationSelector('extensions');
-const workspaceVariableCompletionSections: readonly WorkspaceConfigurationFileKey[] = ['launch', 'tasks'];
+const workspaceVariableCompletionSections = new Set<WorkspaceConfigurationFileKey>(['launch', 'tasks']);
 const workspaceExtensionsCompletionSection: WorkspaceConfigurationFileKey = 'extensions';
 
 const workspaceConfigurationSelector: vscode.DocumentSelector = [
@@ -118,8 +118,8 @@ function isCompletingInsidePropertyStringValue(document: vscode.TextDocument, lo
 	return false;
 }
 
-function isLocationInsideTopLevelProperty(location: Location, values: readonly string[]) {
-	return values.includes(location.path[0] as string);
+function isLocationInsideTopLevelProperty(location: Location, values: ReadonlySet<WorkspaceConfigurationFileKey>) {
+	return values.has(location.path[0] as WorkspaceConfigurationFileKey);
 }
 
 interface IExtensionsContent {
@@ -136,8 +136,8 @@ function registerExtensionsCompletionsInExtensionsDocument(): vscode.Disposable 
 			const location = getLocation(document.getText(), document.offsetAt(position));
 			if (location.path[0] === 'recommendations') {
 				const range = getReplaceRange(document, location, position);
-				const extensionsContent = <IExtensionsContent>parse(document.getText());
-				return provideInstalledExtensionProposals(extensionsContent && extensionsContent.recommendations || [], '', range, false);
+				const recommendations = (<IExtensionsContent>parse(document.getText()))?.recommendations ?? [];
+				return provideInstalledExtensionProposals(recommendations, '', range, false);
 			}
 			return [];
 		}
@@ -150,8 +150,8 @@ function registerExtensionsCompletionsInWorkspaceConfigurationDocument(): vscode
 			const location = getLocation(document.getText(), document.offsetAt(position));
 			if (location.path[0] === workspaceExtensionsCompletionSection && location.path[1] === 'recommendations') {
 				const range = getReplaceRange(document, location, position);
-				const extensionsContent = <IExtensionsContent>parse(document.getText())[workspaceExtensionsCompletionSection];
-				return provideInstalledExtensionProposals(extensionsContent && extensionsContent.recommendations || [], '', range, false);
+				const extensionsContent = (<Record<string, IExtensionsContent | undefined>>parse(document.getText()))[workspaceExtensionsCompletionSection];
+				return provideInstalledExtensionProposals(extensionsContent?.recommendations ?? [], '', range, false);
 			}
 			return [];
 		}

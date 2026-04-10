@@ -23,8 +23,13 @@ import { getWorkspaceLocalConfigPath } from 'vs/workbench/services/configuration
 import { EXTENSIONS_CONFIGURATION_KEY, getWorkspaceFileConfigurationDescriptor } from 'vs/workbench/services/configuration/common/workspaceFileConfiguration';
 
 const extensionsConfigurationDescriptor = getWorkspaceFileConfigurationDescriptor(EXTENSIONS_CONFIGURATION_KEY)!;
+const workspaceExtensionsJsonPathPrefix = [extensionsConfigurationDescriptor.key];
 export const EXTENSIONS_CONFIG = extensionsConfigurationDescriptor.folderSharedPath;
 export const EXTENSIONS_LOCAL_CONFIG = extensionsConfigurationDescriptor.folderLocalPath;
+const WORKSPACE_FOLDER_EXTENSION_TARGETS = [
+	{ kind: 'workspaceFolder' as const, relativePath: extensionsConfigurationDescriptor.folderSharedPath },
+	{ kind: 'workspaceFolderLocal' as const, relativePath: extensionsConfigurationDescriptor.folderLocalPath },
+];
 
 export interface IExtensionsConfigContent {
 	recommendations?: string[];
@@ -189,40 +194,31 @@ export class WorkspaceExtensionsConfigService extends Disposable implements IWor
 		const result: IExtensionsConfigTarget[] = [];
 		if (workspace.configuration) {
 			const workspaceExtensionsConfigContent = await this.resolveWorkspaceExtensionConfig(workspace.configuration);
-			if (includeEmpty || workspaceExtensionsConfigContent) {
-				result.push({ kind: 'workspace', resource: workspace.configuration, jsonPathPrefix: [extensionsConfigurationDescriptor.key], content: workspaceExtensionsConfigContent ?? {} });
-			}
+			this.addTarget(result, includeEmpty, { kind: 'workspace', resource: workspace.configuration, jsonPathPrefix: workspaceExtensionsJsonPathPrefix }, workspaceExtensionsConfigContent);
 			const workspaceLocalConfigurationResource = getWorkspaceLocalConfigPath(workspace.configuration);
 			const workspaceLocalExtensionsConfigContent = await this.resolveWorkspaceExtensionConfig(workspaceLocalConfigurationResource);
-			if (includeEmpty || workspaceLocalExtensionsConfigContent) {
-				result.push({ kind: 'workspaceLocal', resource: workspaceLocalConfigurationResource, jsonPathPrefix: [extensionsConfigurationDescriptor.key], content: workspaceLocalExtensionsConfigContent ?? {} });
-			}
+			this.addTarget(result, includeEmpty, { kind: 'workspaceLocal', resource: workspaceLocalConfigurationResource, jsonPathPrefix: workspaceExtensionsJsonPathPrefix }, workspaceLocalExtensionsConfigContent);
 		}
 
 		for (const workspaceFolder of workspace.folders) {
-			const workspaceFolderExtensionsConfigContent = await this.resolveWorkspaceFolderExtensionConfig(workspaceFolder, extensionsConfigurationDescriptor.folderSharedPath);
-			if (includeEmpty || workspaceFolderExtensionsConfigContent) {
-				result.push({
-					kind: 'workspaceFolder',
-					resource: workspaceFolder.toResource(extensionsConfigurationDescriptor.folderSharedPath),
+			for (const target of WORKSPACE_FOLDER_EXTENSION_TARGETS) {
+				const content = await this.resolveWorkspaceFolderExtensionConfig(workspaceFolder, target.relativePath);
+				this.addTarget(result, includeEmpty, {
+					kind: target.kind,
+					resource: workspaceFolder.toResource(target.relativePath),
 					jsonPathPrefix: [],
-					content: workspaceFolderExtensionsConfigContent ?? {},
-					workspaceFolder
-				});
-			}
-			const workspaceFolderLocalExtensionsConfigContent = await this.resolveWorkspaceFolderExtensionConfig(workspaceFolder, extensionsConfigurationDescriptor.folderLocalPath);
-			if (includeEmpty || workspaceFolderLocalExtensionsConfigContent) {
-				result.push({
-					kind: 'workspaceFolderLocal',
-					resource: workspaceFolder.toResource(extensionsConfigurationDescriptor.folderLocalPath),
-					jsonPathPrefix: [],
-					content: workspaceFolderLocalExtensionsConfigContent ?? {},
-					workspaceFolder
-				});
+					workspaceFolder,
+				}, content);
 			}
 		}
 
 		return result;
+	}
+
+	private addTarget(targets: IExtensionsConfigTarget[], includeEmpty: boolean, target: Omit<IExtensionsConfigTarget, 'content'>, content: IExtensionsConfigContent | undefined): void {
+		if (includeEmpty || content) {
+			targets.push({ ...target, content: content ?? {} });
+		}
 	}
 
 	private async resolveWorkspaceExtensionConfig(workspaceConfigurationResource: URI): Promise<IExtensionsConfigContent | undefined> {

@@ -43,16 +43,21 @@ export interface IWorkspaceFileConfigurationDescriptor {
 }
 
 function createStandaloneDescriptor(key: StandaloneWorkspaceFileConfigurationKey, userStandalonePath?: string): IWorkspaceFileConfigurationDescriptor {
-	const descriptor: IWorkspaceFileConfigurationDescriptor = {
+	if (userStandalonePath) {
+		return {
+			key,
+			folderSharedPath: `${FOLDER_CONFIG_FOLDER_NAME}/${key}.json`,
+			folderLocalPath: `${FOLDER_CONFIG_FOLDER_NAME}/${key}.local.json`,
+			folderType: 'standalone',
+			userStandalonePath,
+		};
+	}
+	return {
 		key,
 		folderSharedPath: `${FOLDER_CONFIG_FOLDER_NAME}/${key}.json`,
 		folderLocalPath: `${FOLDER_CONFIG_FOLDER_NAME}/${key}.local.json`,
 		folderType: 'standalone',
 	};
-	if (userStandalonePath) {
-		descriptor.userStandalonePath = userStandalonePath;
-	}
-	return descriptor;
 }
 
 export const WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS: readonly IWorkspaceFileConfigurationDescriptor[] = [
