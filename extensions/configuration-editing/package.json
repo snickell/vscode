@@ -50,9 +50,12 @@
           "settings.local.json",
           "workspace.json.local",
           "launch.json",
+          "launch.local.json",
           "tasks.json",
+          "tasks.local.json",
           "keybindings.json",
           "extensions.json",
+          "extensions.local.json",
           "argv.json",
           "profiles.json",
           "devcontainer.json",
@@ -131,7 +134,15 @@
         "url": "vscode://schemas/launch"
       },
       {
+        "fileMatch": "/.vscode/launch.local.json",
+        "url": "vscode://schemas/launch"
+      },
+      {
         "fileMatch": "/.vscode/tasks.json",
+        "url": "vscode://schemas/tasks"
+      },
+      {
+        "fileMatch": "/.vscode/tasks.local.json",
         "url": "vscode://schemas/tasks"
       },
       {
@@ -156,6 +167,10 @@
       },
       {
         "fileMatch": "/.vscode/extensions.json",
+        "url": "vscode://schemas/extensions"
+      },
+      {
+        "fileMatch": "/.vscode/extensions.local.json",
         "url": "vscode://schemas/extensions"
       },
       {

@@ -12,7 +12,7 @@ import { distinct } from 'vs/base/common/arrays';
 import { FileChangeType, FileChangesEvent, IFileService, whenProviderRegistered, FileOperationError, FileOperationResult, FileOperation, FileOperationEvent } from 'vs/platform/files/common/files';
 import { ConfigurationModel, ConfigurationModelParser, ConfigurationParseOptions, UserSettings } from 'vs/platform/configuration/common/configurationModels';
 import { WorkspaceConfigurationModelParser, StandaloneConfigurationModelParser } from 'vs/workbench/services/configuration/common/configurationModels';
-import { TASKS_CONFIGURATION_KEY, FOLDER_LOCAL_SETTINGS_NAME, FOLDER_SETTINGS_NAME, LAUNCH_CONFIGURATION_KEY, IConfigurationCache, ConfigurationKey, REMOTE_MACHINE_SCOPES, FOLDER_SCOPES, WORKSPACE_SCOPES, getWorkspaceLocalConfigPath } from 'vs/workbench/services/configuration/common/configuration';
+import { WORKSPACE_STANDALONE_CONFIGURATION_KEYS, TASKS_CONFIGURATION_KEY, FOLDER_LOCAL_SETTINGS_NAME, FOLDER_SETTINGS_NAME, FOLDER_LOCAL_STANDALONE_CONFIGURATIONS, WORKSPACE_STANDALONE_CONFIGURATIONS, IConfigurationCache, ConfigurationKey, REMOTE_MACHINE_SCOPES, FOLDER_SCOPES, WORKSPACE_SCOPES, getWorkspaceLocalConfigPath } from 'vs/workbench/services/configuration/common/configuration';
 import { IStoredWorkspaceFolder } from 'vs/platform/workspaces/common/workspaces';
 import { WorkbenchState, IWorkspaceFolder, IWorkspaceIdentifier } from 'vs/platform/workspace/common/workspace';
 import { ConfigurationScope, Extensions, IConfigurationRegistry, OVERRIDE_PROPERTY_REGEX } from 'vs/platform/configuration/common/configurationRegistry';
@@ -813,8 +813,8 @@ class FileServiceBasedWorkspaceConfiguration extends Disposable {
 	}
 
 	private consolidate(): void {
-		this.workspaceSettings = this.workspaceConfigurationModelParser.settingsModel.merge(this.workspaceConfigurationModelParser.launchModel, this.workspaceConfigurationModelParser.tasksModel);
-		this.workspaceLocalSettings = this.workspaceLocalConfigurationModelParser.settingsModel.merge(this.workspaceLocalConfigurationModelParser.launchModel, this.workspaceLocalConfigurationModelParser.tasksModel);
+		this.workspaceSettings = this.workspaceConfigurationModelParser.settingsModel.merge(...this.workspaceConfigurationModelParser.standaloneConfigurationModels);
+		this.workspaceLocalSettings = this.workspaceLocalConfigurationModelParser.settingsModel.merge(...this.workspaceLocalConfigurationModelParser.standaloneConfigurationModels);
 	}
 
 	private watchWorkspaceConfigurationFile(): IDisposable {
@@ -897,8 +897,8 @@ class CachedWorkspaceConfiguration {
 	}
 
 	private consolidate(): void {
-		this.workspaceSettings = this.workspaceConfigurationModelParser.settingsModel.merge(this.workspaceConfigurationModelParser.launchModel, this.workspaceConfigurationModelParser.tasksModel);
-		this.workspaceLocalSettings = this.workspaceLocalConfigurationModelParser.settingsModel.merge(this.workspaceLocalConfigurationModelParser.launchModel, this.workspaceLocalConfigurationModelParser.tasksModel);
+		this.workspaceSettings = this.workspaceConfigurationModelParser.settingsModel.merge(...this.workspaceConfigurationModelParser.standaloneConfigurationModels);
+		this.workspaceLocalSettings = this.workspaceLocalConfigurationModelParser.settingsModel.merge(...this.workspaceLocalConfigurationModelParser.standaloneConfigurationModels);
 	}
 
 	async updateWorkspace(workspaceIdentifier: IWorkspaceIdentifier, content: string | undefined, localContent: string | undefined): Promise<void> {
@@ -1033,22 +1033,22 @@ export class FolderConfiguration extends Disposable {
 
 		this.scopes = WorkbenchState.WORKSPACE === this.workbenchState ? FOLDER_SCOPES : WORKSPACE_SCOPES;
 		this.configurationFolder = uriIdentityService.extUri.joinPath(workspaceFolder.uri, configFolderRelativePath);
-		this.cachedFolderConfiguration = new CachedFolderConfiguration(workspaceFolder.uri, configFolderRelativePath, FOLDER_SETTINGS_NAME, [TASKS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY], { scopes: this.scopes, skipRestricted: this.isUntrusted() }, configurationCache);
-		this.cachedFolderLocalConfiguration = new CachedFolderConfiguration(workspaceFolder.uri, configFolderRelativePath, FOLDER_LOCAL_SETTINGS_NAME, [], { scopes: this.scopes, skipRestricted: this.isUntrusted() }, configurationCache);
+		this.cachedFolderConfiguration = new CachedFolderConfiguration(workspaceFolder.uri, configFolderRelativePath, FOLDER_SETTINGS_NAME, WORKSPACE_STANDALONE_CONFIGURATION_KEYS, { scopes: this.scopes, skipRestricted: this.isUntrusted() }, configurationCache);
+		this.cachedFolderLocalConfiguration = new CachedFolderConfiguration(workspaceFolder.uri, configFolderRelativePath, FOLDER_LOCAL_SETTINGS_NAME, WORKSPACE_STANDALONE_CONFIGURATION_KEYS, { scopes: this.scopes, skipRestricted: this.isUntrusted() }, configurationCache);
 		if (useCache && this.configurationCache.needsCaching(workspaceFolder.uri)) {
 			this.folderConfiguration = this.cachedFolderConfiguration;
 			this.folderLocalConfiguration = this.cachedFolderLocalConfiguration;
 			whenProviderRegistered(workspaceFolder.uri, fileService)
 				.then(() => {
-					this.folderConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_SETTINGS_NAME, [TASKS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY]));
-					this.folderLocalConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_LOCAL_SETTINGS_NAME, []));
+					this.folderConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_SETTINGS_NAME, WORKSPACE_STANDALONE_CONFIGURATIONS));
+					this.folderLocalConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_LOCAL_SETTINGS_NAME, FOLDER_LOCAL_STANDALONE_CONFIGURATIONS));
 					this._register(this.folderConfiguration.onDidChange(e => this.onDidFolderConfigurationChange()));
 					this._register(this.folderLocalConfiguration.onDidChange(e => this.onDidFolderConfigurationChange()));
 					this.onDidFolderConfigurationChange();
 				});
 		} else {
-			this.folderConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_SETTINGS_NAME, [TASKS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY]));
-			this.folderLocalConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_LOCAL_SETTINGS_NAME, []));
+			this.folderConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_SETTINGS_NAME, WORKSPACE_STANDALONE_CONFIGURATIONS));
+			this.folderLocalConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_LOCAL_SETTINGS_NAME, FOLDER_LOCAL_STANDALONE_CONFIGURATIONS));
 			this._register(this.folderConfiguration.onDidChange(e => this.onDidFolderConfigurationChange()));
 			this._register(this.folderLocalConfiguration.onDidChange(e => this.onDidFolderConfigurationChange()));
 		}
@@ -1085,9 +1085,9 @@ export class FolderConfiguration extends Disposable {
 		this._onDidChange.fire();
 	}
 
-	private createFileServiceBasedConfiguration(fileService: IFileService, uriIdentityService: IUriIdentityService, logService: ILogService, settingsName: string, standAloneConfigurationKeys: string[]) {
+	private createFileServiceBasedConfiguration(fileService: IFileService, uriIdentityService: IUriIdentityService, logService: ILogService, settingsName: string, standAloneConfigurations: Record<string, string>) {
 		const settingsResource = uriIdentityService.extUri.joinPath(this.configurationFolder, `${settingsName}.json`);
-		const standAloneConfigurationResources: [string, URI][] = standAloneConfigurationKeys.map(name => ([name, uriIdentityService.extUri.joinPath(this.configurationFolder, `${name}.json`)]));
+		const standAloneConfigurationResources: [string, URI][] = Object.entries(standAloneConfigurations).map(([key, path]) => ([key, uriIdentityService.extUri.joinPath(this.workspaceFolder.uri, path)]));
 		return new FileServiceBasedConfiguration(this.configurationFolder.toString(), settingsResource, standAloneConfigurationResources, { scopes: this.scopes, skipRestricted: this.isUntrusted() }, fileService, uriIdentityService, logService);
 	}
 

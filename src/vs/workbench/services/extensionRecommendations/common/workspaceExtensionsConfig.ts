@@ -11,16 +11,18 @@ import { getIconClasses } from 'vs/editor/common/services/getIconClasses';
 import { FileKind, IFileService } from 'vs/platform/files/common/files';
 import { InstantiationType, registerSingleton } from 'vs/platform/instantiation/common/extensions';
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
-import { isWorkspace, IWorkspace, IWorkspaceContextService, IWorkspaceFolder } from 'vs/platform/workspace/common/workspace';
+import { IWorkspaceContextService, IWorkspaceFolder } from 'vs/platform/workspace/common/workspace';
 import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from 'vs/platform/quickinput/common/quickInput';
 import { IModelService } from 'vs/editor/common/services/model';
 import { ILanguageService } from 'vs/editor/common/languages/language';
 import { localize } from 'vs/nls';
 import { URI } from 'vs/base/common/uri';
 import { IJSONEditingService, IJSONValue } from 'vs/workbench/services/configuration/common/jsonEditing';
-import { ResourceMap } from 'vs/base/common/map';
+import { basename } from 'vs/base/common/resources';
+import { getWorkspaceLocalConfigPath } from 'vs/workbench/services/configuration/common/configuration';
 
 export const EXTENSIONS_CONFIG = '.vscode/extensions.json';
+export const EXTENSIONS_LOCAL_CONFIG = '.vscode/extensions.local.json';
 
 export interface IExtensionsConfigContent {
 	recommendations?: string[];
@@ -39,6 +41,14 @@ export interface IWorkspaceExtensionsConfigService {
 
 	toggleRecommendation(extensionId: string): Promise<void>;
 	toggleUnwantedRecommendation(extensionId: string): Promise<void>;
+}
+
+interface IExtensionsConfigTarget {
+	readonly kind: 'workspace' | 'workspaceLocal' | 'workspaceFolder' | 'workspaceFolderLocal';
+	readonly resource: URI;
+	readonly jsonPathPrefix: string[];
+	readonly content: IExtensionsConfigContent;
+	readonly workspaceFolder?: IWorkspaceFolder;
 }
 
 export class WorkspaceExtensionsConfigService extends Disposable implements IWorkspaceExtensionsConfigService {
@@ -60,8 +70,8 @@ export class WorkspaceExtensionsConfigService extends Disposable implements IWor
 		this._register(workspaceContextService.onDidChangeWorkspaceFolders(e => this._onDidChangeExtensionsConfigs.fire()));
 		this._register(fileService.onDidFilesChange(e => {
 			const workspace = workspaceContextService.getWorkspace();
-			if ((workspace.configuration && e.affects(workspace.configuration))
-				|| workspace.folders.some(folder => e.affects(folder.toResource(EXTENSIONS_CONFIG)))
+			if ((workspace.configuration && (e.affects(workspace.configuration) || e.affects(getWorkspaceLocalConfigPath(workspace.configuration))))
+				|| workspace.folders.some(folder => e.affects(folder.toResource(EXTENSIONS_CONFIG)) || e.affects(folder.toResource(EXTENSIONS_LOCAL_CONFIG)))
 			) {
 				this._onDidChangeExtensionsConfigs.fire();
 			}
@@ -69,14 +79,7 @@ export class WorkspaceExtensionsConfigService extends Disposable implements IWor
 	}
 
 	async getExtensionsConfigs(): Promise<IExtensionsConfigContent[]> {
-		const workspace = this.workspaceContextService.getWorkspace();
-		const result: IExtensionsConfigContent[] = [];
-		const workspaceExtensionsConfigContent = workspace.configuration ? await this.resolveWorkspaceExtensionConfig(workspace.configuration) : undefined;
-		if (workspaceExtensionsConfigContent) {
-			result.push(workspaceExtensionsConfigContent);
-		}
-		result.push(...await Promise.all(workspace.folders.map(workspaceFolder => this.resolveWorkspaceFolderExtensionConfig(workspaceFolder))));
-		return result;
+		return (await this.getExtensionConfigTargets(false)).map(target => target.content);
 	}
 
 	async getRecommendations(): Promise<string[]> {
@@ -91,153 +94,133 @@ export class WorkspaceExtensionsConfigService extends Disposable implements IWor
 
 	async toggleRecommendation(extensionId: string): Promise<void> {
 		extensionId = extensionId.toLowerCase();
-		const workspace = this.workspaceContextService.getWorkspace();
-		const workspaceExtensionsConfigContent = workspace.configuration ? await this.resolveWorkspaceExtensionConfig(workspace.configuration) : undefined;
-		const workspaceFolderExtensionsConfigContents = new ResourceMap<IExtensionsConfigContent>();
-		await Promise.all(workspace.folders.map(async workspaceFolder => {
-			const extensionsConfigContent = await this.resolveWorkspaceFolderExtensionConfig(workspaceFolder);
-			workspaceFolderExtensionsConfigContents.set(workspaceFolder.uri, extensionsConfigContent);
-		}));
+		const targets = await this.getExtensionConfigTargets();
+		const configuredTargets = targets.filter(target => target.content.recommendations?.some(r => r.toLowerCase() === extensionId));
+		const availableTargets = configuredTargets.length ? configuredTargets : targets;
+		const pickedTargets = await this.pickTargets(
+			availableTargets,
+			configuredTargets.length ? localize('select for remove', "Remove extension recommendation from") : localize('select for add', "Add extension recommendation to")
+		);
 
-		const isWorkspaceRecommended = workspaceExtensionsConfigContent && workspaceExtensionsConfigContent.recommendations?.some(r => r.toLowerCase() === extensionId);
-		const recommendedWorksapceFolders = workspace.folders.filter(workspaceFolder => workspaceFolderExtensionsConfigContents.get(workspaceFolder.uri)?.recommendations?.some(r => r.toLowerCase() === extensionId));
-		const isRecommended = isWorkspaceRecommended || recommendedWorksapceFolders.length > 0;
-
-		const workspaceOrFolders = isRecommended
-			? await this.pickWorkspaceOrFolders(recommendedWorksapceFolders, isWorkspaceRecommended ? workspace : undefined, localize('select for remove', "Remove extension recommendation from"))
-			: await this.pickWorkspaceOrFolders(workspace.folders, workspace.configuration ? workspace : undefined, localize('select for add', "Add extension recommendation to"));
-
-		for (const workspaceOrWorkspaceFolder of workspaceOrFolders) {
-			if (isWorkspace(workspaceOrWorkspaceFolder)) {
-				await this.addOrRemoveWorkspaceRecommendation(extensionId, workspaceOrWorkspaceFolder, workspaceExtensionsConfigContent, !isRecommended);
-			} else {
-				await this.addOrRemoveWorkspaceFolderRecommendation(extensionId, workspaceOrWorkspaceFolder, workspaceFolderExtensionsConfigContents.get(workspaceOrWorkspaceFolder.uri)!, !isRecommended);
-			}
+		for (const target of pickedTargets) {
+			await this.updateRecommendation(target, extensionId, !configuredTargets.length);
 		}
 	}
 
 	async toggleUnwantedRecommendation(extensionId: string): Promise<void> {
-		const workspace = this.workspaceContextService.getWorkspace();
-		const workspaceExtensionsConfigContent = workspace.configuration ? await this.resolveWorkspaceExtensionConfig(workspace.configuration) : undefined;
-		const workspaceFolderExtensionsConfigContents = new ResourceMap<IExtensionsConfigContent>();
-		await Promise.all(workspace.folders.map(async workspaceFolder => {
-			const extensionsConfigContent = await this.resolveWorkspaceFolderExtensionConfig(workspaceFolder);
-			workspaceFolderExtensionsConfigContents.set(workspaceFolder.uri, extensionsConfigContent);
-		}));
+		const targets = await this.getExtensionConfigTargets();
+		const configuredTargets = targets.filter(target => target.content.unwantedRecommendations?.some(r => r === extensionId));
+		const availableTargets = configuredTargets.length ? configuredTargets : targets;
+		const pickedTargets = await this.pickTargets(
+			availableTargets,
+			configuredTargets.length ? localize('select for remove', "Remove extension recommendation from") : localize('select for add', "Add extension recommendation to")
+		);
 
-		const isWorkspaceUnwanted = workspaceExtensionsConfigContent && workspaceExtensionsConfigContent.unwantedRecommendations?.some(r => r === extensionId);
-		const unWantedWorksapceFolders = workspace.folders.filter(workspaceFolder => workspaceFolderExtensionsConfigContents.get(workspaceFolder.uri)?.unwantedRecommendations?.some(r => r === extensionId));
-		const isUnwanted = isWorkspaceUnwanted || unWantedWorksapceFolders.length > 0;
+		for (const target of pickedTargets) {
+			await this.updateUnwantedRecommendation(target, extensionId, !configuredTargets.length);
+		}
+	}
 
-		const workspaceOrFolders = isUnwanted
-			? await this.pickWorkspaceOrFolders(unWantedWorksapceFolders, isWorkspaceUnwanted ? workspace : undefined, localize('select for remove', "Remove extension recommendation from"))
-			: await this.pickWorkspaceOrFolders(workspace.folders, workspace.configuration ? workspace : undefined, localize('select for add', "Add extension recommendation to"));
+	private async updateRecommendation(target: IExtensionsConfigTarget, extensionId: string, add: boolean): Promise<void> {
+		const values: IJSONValue[] = [];
+		const { content } = target;
+		if (add) {
+			values.push({ path: [...target.jsonPathPrefix, 'recommendations'], value: [...content.recommendations || [], extensionId] });
+			if (content.unwantedRecommendations && content.unwantedRecommendations.some(e => e === extensionId)) {
+				values.push({ path: [...target.jsonPathPrefix, 'unwantedRecommendations'], value: content.unwantedRecommendations.filter(e => e !== extensionId) });
+			}
+		} else if (content.recommendations) {
+			values.push({ path: [...target.jsonPathPrefix, 'recommendations'], value: content.recommendations.filter(e => e !== extensionId) });
+		}
 
-		for (const workspaceOrWorkspaceFolder of workspaceOrFolders) {
-			if (isWorkspace(workspaceOrWorkspaceFolder)) {
-				await this.addOrRemoveWorkspaceUnwantedRecommendation(extensionId, workspaceOrWorkspaceFolder, workspaceExtensionsConfigContent, !isUnwanted);
+		if (values.length) {
+			return this.jsonEditingService.write(target.resource, values, true);
+		}
+	}
+
+	private async updateUnwantedRecommendation(target: IExtensionsConfigTarget, extensionId: string, add: boolean): Promise<void> {
+		const values: IJSONValue[] = [];
+		const { content } = target;
+		if (add) {
+			values.push({ path: [...target.jsonPathPrefix, 'unwantedRecommendations'], value: [...content.unwantedRecommendations || [], extensionId] });
+			if (content.recommendations && content.recommendations.some(e => e === extensionId)) {
+				values.push({ path: [...target.jsonPathPrefix, 'recommendations'], value: content.recommendations.filter(e => e !== extensionId) });
+			}
+		} else if (content.unwantedRecommendations) {
+			values.push({ path: [...target.jsonPathPrefix, 'unwantedRecommendations'], value: content.unwantedRecommendations.filter(e => e !== extensionId) });
+		}
+
+		if (values.length) {
+			return this.jsonEditingService.write(target.resource, values, true);
+		}
+	}
+
+	private async pickTargets(targets: IExtensionsConfigTarget[], placeHolder: string): Promise<IExtensionsConfigTarget[]> {
+		if (targets.length === 1) {
+			return targets;
+		}
+
+		const picks: (IQuickPickItem & { target: IExtensionsConfigTarget } | IQuickPickSeparator)[] = [];
+		for (const target of targets) {
+			if (target.kind === 'workspace' || target.kind === 'workspaceLocal') {
+				picks.push({
+					label: target.kind === 'workspace' ? localize('workspace', "Workspace") : localize('workspaceLocal', "Local Workspace"),
+					description: basename(target.resource),
+					target,
+				});
 			} else {
-				await this.addOrRemoveWorkspaceFolderUnwantedRecommendation(extensionId, workspaceOrWorkspaceFolder, workspaceFolderExtensionsConfigContents.get(workspaceOrWorkspaceFolder.uri)!, !isUnwanted);
+				picks.push({
+					label: target.workspaceFolder!.name,
+					description: target.kind === 'workspaceFolder' ? localize('workspace folder', "Workspace Folder") : localize('workspace folder local', "Local Folder"),
+					target,
+					iconClasses: getIconClasses(this.modelService, this.languageService, target.workspaceFolder!.uri, FileKind.ROOT_FOLDER)
+				});
 			}
 		}
+
+		const result = await this.quickInputService.pick(picks, { placeHolder, canPickMany: true }) || [];
+		return result.map(r => r.target!);
 	}
 
-	private async addOrRemoveWorkspaceFolderRecommendation(extensionId: string, workspaceFolder: IWorkspaceFolder, extensionsConfigContent: IExtensionsConfigContent, add: boolean): Promise<void> {
-		const values: IJSONValue[] = [];
-		if (add) {
-			values.push({ path: ['recommendations'], value: [...extensionsConfigContent.recommendations || [], extensionId] });
-			if (extensionsConfigContent.unwantedRecommendations && extensionsConfigContent.unwantedRecommendations.some(e => e === extensionId)) {
-				values.push({ path: ['unwantedRecommendations'], value: extensionsConfigContent.unwantedRecommendations.filter(e => e !== extensionId) });
+	private async getExtensionConfigTargets(includeEmpty = true): Promise<IExtensionsConfigTarget[]> {
+		const workspace = this.workspaceContextService.getWorkspace();
+		const result: IExtensionsConfigTarget[] = [];
+		if (workspace.configuration) {
+			const workspaceExtensionsConfigContent = await this.resolveWorkspaceExtensionConfig(workspace.configuration);
+			if (includeEmpty || workspaceExtensionsConfigContent) {
+				result.push({ kind: 'workspace', resource: workspace.configuration, jsonPathPrefix: ['extensions'], content: workspaceExtensionsConfigContent ?? {} });
 			}
-		} else if (extensionsConfigContent.recommendations) {
-			values.push({ path: ['recommendations'], value: extensionsConfigContent.recommendations.filter(e => e !== extensionId) });
-		}
-
-		if (values.length) {
-			return this.jsonEditingService.write(workspaceFolder.toResource(EXTENSIONS_CONFIG), values, true);
-		}
-	}
-
-	private async addOrRemoveWorkspaceRecommendation(extensionId: string, workspace: IWorkspace, extensionsConfigContent: IExtensionsConfigContent | undefined, add: boolean): Promise<void> {
-		const values: IJSONValue[] = [];
-		if (extensionsConfigContent) {
-			if (add) {
-				values.push({ path: ['extensions', 'recommendations'], value: [...extensionsConfigContent.recommendations || [], extensionId] });
-				if (extensionsConfigContent.unwantedRecommendations && extensionsConfigContent.unwantedRecommendations.some(e => e === extensionId)) {
-					values.push({ path: ['extensions', 'unwantedRecommendations'], value: extensionsConfigContent.unwantedRecommendations.filter(e => e !== extensionId) });
-				}
-			} else if (extensionsConfigContent.recommendations) {
-				values.push({ path: ['extensions', 'recommendations'], value: extensionsConfigContent.recommendations.filter(e => e !== extensionId) });
+			const workspaceLocalConfigurationResource = getWorkspaceLocalConfigPath(workspace.configuration);
+			const workspaceLocalExtensionsConfigContent = await this.resolveWorkspaceExtensionConfig(workspaceLocalConfigurationResource);
+			if (includeEmpty || workspaceLocalExtensionsConfigContent) {
+				result.push({ kind: 'workspaceLocal', resource: workspaceLocalConfigurationResource, jsonPathPrefix: ['extensions'], content: workspaceLocalExtensionsConfigContent ?? {} });
 			}
-		} else if (add) {
-			values.push({ path: ['extensions'], value: { recommendations: [extensionId] } });
 		}
 
-		if (values.length) {
-			return this.jsonEditingService.write(workspace.configuration!, values, true);
-		}
-	}
-
-	private async addOrRemoveWorkspaceFolderUnwantedRecommendation(extensionId: string, workspaceFolder: IWorkspaceFolder, extensionsConfigContent: IExtensionsConfigContent, add: boolean): Promise<void> {
-		const values: IJSONValue[] = [];
-		if (add) {
-			values.push({ path: ['unwantedRecommendations'], value: [...extensionsConfigContent.unwantedRecommendations || [], extensionId] });
-			if (extensionsConfigContent.recommendations && extensionsConfigContent.recommendations.some(e => e === extensionId)) {
-				values.push({ path: ['recommendations'], value: extensionsConfigContent.recommendations.filter(e => e !== extensionId) });
+		for (const workspaceFolder of workspace.folders) {
+			const workspaceFolderExtensionsConfigContent = await this.resolveWorkspaceFolderExtensionConfig(workspaceFolder, false);
+			if (includeEmpty || workspaceFolderExtensionsConfigContent) {
+				result.push({
+					kind: 'workspaceFolder',
+					resource: workspaceFolder.toResource(EXTENSIONS_CONFIG),
+					jsonPathPrefix: [],
+					content: workspaceFolderExtensionsConfigContent ?? {},
+					workspaceFolder
+				});
 			}
-		} else if (extensionsConfigContent.unwantedRecommendations) {
-			values.push({ path: ['unwantedRecommendations'], value: extensionsConfigContent.unwantedRecommendations.filter(e => e !== extensionId) });
-		}
-		if (values.length) {
-			return this.jsonEditingService.write(workspaceFolder.toResource(EXTENSIONS_CONFIG), values, true);
-		}
-	}
-
-	private async addOrRemoveWorkspaceUnwantedRecommendation(extensionId: string, workspace: IWorkspace, extensionsConfigContent: IExtensionsConfigContent | undefined, add: boolean): Promise<void> {
-		const values: IJSONValue[] = [];
-		if (extensionsConfigContent) {
-			if (add) {
-				values.push({ path: ['extensions', 'unwantedRecommendations'], value: [...extensionsConfigContent.unwantedRecommendations || [], extensionId] });
-				if (extensionsConfigContent.recommendations && extensionsConfigContent.recommendations.some(e => e === extensionId)) {
-					values.push({ path: ['extensions', 'recommendations'], value: extensionsConfigContent.recommendations.filter(e => e !== extensionId) });
-				}
-			} else if (extensionsConfigContent.unwantedRecommendations) {
-				values.push({ path: ['extensions', 'unwantedRecommendations'], value: extensionsConfigContent.unwantedRecommendations.filter(e => e !== extensionId) });
+			const workspaceFolderLocalExtensionsConfigContent = await this.resolveWorkspaceFolderExtensionConfig(workspaceFolder, true);
+			if (includeEmpty || workspaceFolderLocalExtensionsConfigContent) {
+				result.push({
+					kind: 'workspaceFolderLocal',
+					resource: workspaceFolder.toResource(EXTENSIONS_LOCAL_CONFIG),
+					jsonPathPrefix: [],
+					content: workspaceFolderLocalExtensionsConfigContent ?? {},
+					workspaceFolder
+				});
 			}
-		} else if (add) {
-			values.push({ path: ['extensions'], value: { unwantedRecommendations: [extensionId] } });
 		}
 
-		if (values.length) {
-			return this.jsonEditingService.write(workspace.configuration!, values, true);
-		}
-	}
-
-	private async pickWorkspaceOrFolders(workspaceFolders: IWorkspaceFolder[], workspace: IWorkspace | undefined, placeHolder: string): Promise<(IWorkspace | IWorkspaceFolder)[]> {
-		const workspaceOrFolders = workspace ? [...workspaceFolders, workspace] : [...workspaceFolders];
-		if (workspaceOrFolders.length === 1) {
-			return workspaceOrFolders;
-		}
-
-		const folderPicks: (IQuickPickItem & { workspaceOrFolder: IWorkspace | IWorkspaceFolder } | IQuickPickSeparator)[] = workspaceFolders.map(workspaceFolder => {
-			return {
-				label: workspaceFolder.name,
-				description: localize('workspace folder', "Workspace Folder"),
-				workspaceOrFolder: workspaceFolder,
-				iconClasses: getIconClasses(this.modelService, this.languageService, workspaceFolder.uri, FileKind.ROOT_FOLDER)
-			};
-		});
-
-		if (workspace) {
-			folderPicks.push({ type: 'separator' });
-			folderPicks.push({
-				label: localize('workspace', "Workspace"),
-				workspaceOrFolder: workspace,
-			});
-		}
-
-		const result = await this.quickInputService.pick(folderPicks, { placeHolder, canPickMany: true }) || [];
-		return result.map(r => r.workspaceOrFolder!);
+		return result;
 	}
 
 	private async resolveWorkspaceExtensionConfig(workspaceConfigurationResource: URI): Promise<IExtensionsConfigContent | undefined> {
@@ -249,13 +232,13 @@ export class WorkspaceExtensionsConfigService extends Disposable implements IWor
 		return undefined;
 	}
 
-	private async resolveWorkspaceFolderExtensionConfig(workspaceFolder: IWorkspaceFolder): Promise<IExtensionsConfigContent> {
+	private async resolveWorkspaceFolderExtensionConfig(workspaceFolder: IWorkspaceFolder, local: boolean): Promise<IExtensionsConfigContent | undefined> {
 		try {
-			const content = await this.fileService.readFile(workspaceFolder.toResource(EXTENSIONS_CONFIG));
+			const content = await this.fileService.readFile(workspaceFolder.toResource(local ? EXTENSIONS_LOCAL_CONFIG : EXTENSIONS_CONFIG));
 			const extensionsConfigContent = <IExtensionsConfigContent>parse(content.value.toString());
 			return this.parseExtensionConfig(extensionsConfigContent);
 		} catch (e) { /* ignore */ }
-		return {};
+		return undefined;
 	}
 
 	private parseExtensionConfig(extensionsConfigContent: IExtensionsConfigContent): IExtensionsConfigContent {

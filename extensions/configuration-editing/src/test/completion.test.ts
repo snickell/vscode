@@ -356,6 +356,28 @@ suite('Completions in extensions.json', () => {
 	});
 });
 
+suite('Completions in extensions.local.json', () => {
+	const testFile = 'extensions.local.json';
+	test('add recommendation', async () => {
+		const content = [
+			'{',
+			'  "recommendations": [',
+			'    |',
+			'  ]',
+			'}',
+		].join('\n');
+		const resultText = [
+			'{',
+			'  "recommendations": [',
+			'    "ms-vscode.js-debug"',
+			'  ]',
+			'}',
+		].join('\n');
+		const expected = { label: 'ms-vscode.js-debug', resultText };
+		await testCompletion(testFile, 'jsonc', content, expected);
+	});
+});
+
 suite('Completions in Local Workspace settings files', () => {
 	const testFile = 'test.code-workspace.local';
 
@@ -502,6 +524,38 @@ suite('Completions in launch.json', () => {
 	});
 });
 
+suite('Completions in launch.local.json', () => {
+	const testFile = 'launch.local.json';
+	test('variable completions', async () => {
+		const content = [
+			'{',
+			'  "version": "0.2.0",',
+			'  "configurations": [',
+			'    {',
+			'      "name": "Run Extension",',
+			'      "type": "extensionHost",',
+			'      "preLaunchTask": "${|defaultBuildTask}"',
+			'    }',
+			'  ]',
+			'}',
+		].join('\n');
+		const resultText = [
+			'{',
+			'  "version": "0.2.0",',
+			'  "configurations": [',
+			'    {',
+			'      "name": "Run Extension",',
+			'      "type": "extensionHost",',
+			'      "preLaunchTask": "${cwd}"',
+			'    }',
+			'  ]',
+			'}',
+		].join('\n');
+		const expected = { label: '${cwd}', resultText };
+		await testCompletion(testFile, 'jsonc', content, expected);
+	});
+});
+
 suite('Completions in tasks.json', () => {
 	const testFile = 'tasks.json';
 	test('variable completions', async () => {
@@ -557,6 +611,36 @@ suite('Completions in tasks.json', () => {
 			const expected = { label: '${cwd}', resultText };
 			await testCompletion(testFile, 'jsonc', content, expected);
 		}
+	});
+});
+
+suite('Completions in tasks.local.json', () => {
+	const testFile = 'tasks.local.json';
+	test('variable completions', async () => {
+		const content = [
+			'{',
+			'  "version": "0.2.0",',
+			'  "tasks": [',
+			'    {',
+			'      "type": "shell",',
+			'      "command": "${|defaultBuildTask}"',
+			'    }',
+			'  ]',
+			'}',
+		].join('\n');
+		const resultText = [
+			'{',
+			'  "version": "0.2.0",',
+			'  "tasks": [',
+			'    {',
+			'      "type": "shell",',
+			'      "command": "${cwd}"',
+			'    }',
+			'  ]',
+			'}',
+		].join('\n');
+		const expected = { label: '${cwd}', resultText };
+		await testCompletion(testFile, 'jsonc', content, expected);
 	});
 });
 

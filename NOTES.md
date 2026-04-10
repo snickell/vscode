@@ -1,0 +1,51 @@
+# Notes
+
+- 2026-04-09: Read `/Users/seth/src/vscode-4-first-class-local-targets.spec.md` and copied it into `SPEC.md`.
+- 2026-04-09: Current target and inspect plumbing lives in `src/vs/platform/configuration/common/configuration.ts` and `src/vs/platform/configuration/common/configurationModels.ts`.
+- 2026-04-09: Current workbench loading splits across `WorkspaceConfiguration`, `FolderConfiguration`, and `FileServiceBasedConfiguration` in `src/vs/workbench/services/configuration/browser/configuration.ts`.
+- 2026-04-09: Current write routing lives in `src/vs/workbench/services/configuration/common/configurationEditing.ts` and `src/vs/workbench/services/configuration/browser/configurationService.ts`.
+- 2026-04-09: Current settings target UI is keyed by `SettingsTarget` in `src/vs/workbench/contrib/preferences/browser/preferencesWidgets.ts`; folder scope is encoded as a bare `URI`, which will need extension to represent shared versus local folder targets cleanly.
+- 2026-04-09: Current schema and preferences file resolution live in `src/vs/workbench/services/preferences/browser/preferencesService.ts`, `src/vs/workbench/contrib/preferences/common/preferencesContribution.ts`, and schema registration in `src/vs/workbench/services/configuration/browser/configurationService.ts`.
+- 2026-04-09: Current ext-host inspect surface is assembled in `src/vs/workbench/api/common/extHostConfiguration.ts`; the public inspect return type is declared in `src/vscode-dts/vscode.d.ts`.
+- 2026-04-09: Added real local workspace and local folder layers to the core `Configuration` model, including inspect fields, serialization, compare/update paths, and distinct consolidated merges.
+- 2026-04-09: Added workspace-local loading for sibling `*.code-workspace.local` files and folder-local loading for `.vscode/settings.local.json`, with restricted-setting filtering shared with the existing trust path.
+- 2026-04-09: Extended configuration editing and update routing so explicit Local Workspace settings writes land in `*.code-workspace.local` and `.vscode/settings.local.json`.
+- 2026-04-09: Extended preferences and Settings UI plumbing to expose separate local workspace and local folder targets, including commands, split-editor resolution, scope labels, and persisted target revival.
+- 2026-04-09: Extended ext-host inspect data and `src/vscode-dts/vscode.d.ts` with `workspaceLocal*` and `workspaceFolderLocal*` values.
+- 2026-04-09: Added focused tests in `src/vs/platform/configuration/test/common/configurationModels.test.ts`, `src/vs/workbench/api/test/browser/extHostConfiguration.test.ts`, `src/vs/workbench/services/configuration/test/browser/configurationEditing.test.ts`, and `src/vs/workbench/services/configuration/test/browser/configurationService.test.ts`.
+- 2026-04-09: `tsc -p src/tsconfig.json --noEmit --pretty false` is clean for this feature; the only remaining failures are the pre-existing `src/vs/platform/environment/test/node/argv.test.ts` errors at lines 116 and 146, reproduced in the main checkout too.
+- 2026-04-09: Targeted browser validation passed 7 focused tests from `/Users/seth/src/vscode` after transpiling the touched worktree files into the existing built `out/` tree in the main checkout because the worktree had no runnable build output.
+- 2026-04-09: Critique pass 1 removed an invalid direct single-folder `WORKSPACE_FOLDER_LOCAL` editing test instead of adding single-folder special casing.
+- 2026-04-09: Critique pass 2 kept the implementation on the existing workspace and folder configuration loaders; no overlay or provenance-hiding fallback was added.
+- 2026-04-09: Critique pass 3 checked merge-shape and formatting; `git diff --check` is clean.
+- 2026-04-09: Followup pass filled the remaining local-file integration gap in `extensions/configuration-editing` by marking `settings.local.json`, `*.code-workspace.local`, and `workspace.json.local` as JSONC, adding schema associations for local workspace and folder files, and extending the existing completion selectors to the Local Workspace settings files.
+- 2026-04-09: Followup pass extended `src/vs/workbench/contrib/extensions/browser/extensionsCompletionItemsProvider.ts` so `extensions.supportUntrustedWorkspaces` proposals also appear in `.vscode/settings.local.json`.
+- 2026-04-09: `tsc -p extensions/configuration-editing/tsconfig.json --noEmit --pretty false` is clean once the worktree sees the main checkout dependencies; the worktree still has no native node_modules of its own.
+- 2026-04-09: Re-ran `tsc -p src/tsconfig.json --noEmit --pretty false`; the only failures remain the pre-existing `src/vs/platform/environment/test/node/argv.test.ts` errors at lines 116 and 146.
+- 2026-04-09: Re-ran the configuration-editing integration suite against the worktree extension using the built app binary from `/Users/seth/src/vscode`; all 15 tests passed, including the new `Completions in settings.local.json` and `Completions in Local Workspace settings files` coverage.
+- 2026-04-09: Re-ran the focused browser test set from `/Users/seth/src/vscode`; all 7 local-target tests still pass after the followup selector and schema edits.
+- 2026-04-09: Followup critique pass 1 kept the extra work in the ownership boundary where the gap lived, instead of pushing more special cases into workbench configuration services.
+- 2026-04-09: Followup critique pass 2 kept the diff small by reusing existing selectors and schema entries rather than inventing new local-only infrastructure.
+- 2026-04-09: Followup critique pass 3 kept the worktree clean after validation by removing temporary symlinks and generated extension build output.
+- 2026-04-09: `NEW_WORK.md` reopens the finish phases for upstream alignment. The feature story now needs to speak first in terms of Local Workspace settings and second in terms of first-class targets.
+- 2026-04-09: Upstream alignment pass renamed the visible scope labels and target tabs to `Local Workspace Settings` and `Local Folder Settings`, and aligned the nearby tests and `vscode.d.ts` wording with that feature story.
+- 2026-04-09: Re-ran `tsc -p extensions/configuration-editing/tsconfig.json --noEmit --pretty false`; it is clean.
+- 2026-04-09: Re-ran `tsc -p src/tsconfig.json --noEmit --pretty false`; the only failures remain the pre-existing `src/vs/platform/environment/test/node/argv.test.ts` errors at lines 116 and 146.
+- 2026-04-09: Rebuilt `extensions/configuration-editing/out` only for validation, then re-ran the configuration-editing integration suite against the worktree extension using the built app from `/Users/seth/src/vscode`; all 15 tests passed.
+- 2026-04-09: Refreshed the focused browser test artifacts in `/Users/seth/src/vscode/out` from the worktree sources, then re-ran the narrowed browser suite from `/Users/seth/src/vscode`; all 7 local-settings tests passed.
+- 2026-04-09: Upstream critique pass 1 confirmed that the branch now speaks first in terms of Local Workspace settings and keeps first-class targets as the implementation detail.
+- 2026-04-09: Upstream critique pass 2 kept the naming pass to doc text, visible labels, and test churn; no loader or model rewrites were needed.
+- 2026-04-09: Upstream critique pass 3 checked mergeability, kept `git diff --check` clean, and verified that the main checkout had no tracked changes after the focused browser validation run.
+- 2026-04-09: `NEW_WORK.md` broadened the pass from Local Workspace settings only to the wider local workspace file family: `.vscode/tasks.local.json`, `.vscode/launch.local.json`, `.vscode/extensions.local.json`, and `tasks`, `launch`, and `extensions` in `*.code-workspace.local`.
+- 2026-04-09: Refactored the workspace and folder configuration plumbing around declarative standalone-file maps so shared and local workspace file handling can reuse the same parser, cache, merge, and write-routing shapes.
+- 2026-04-09: Extended local workspace configuration loading and writing to cover `launch`, `tasks`, and `extensions` in both saved-workspace local files and folder-local standalone files.
+- 2026-04-09: Extended `extensions/configuration-editing` to recognize `launch.local.json`, `tasks.local.json`, and `extensions.local.json` as JSONC files with the same schema and completion behavior as their shared counterparts.
+- 2026-04-09: Extended `src/vs/workbench/services/extensionRecommendations/common/workspaceExtensionsConfig.ts` so workspace recommendations read and write both shared and local workspace extension files, including `*.code-workspace.local` and `.vscode/extensions.local.json`, while preserving explicit shared-versus-local target selection.
+- 2026-04-09: Re-ran `tsc -p extensions/configuration-editing/tsconfig.json --noEmit --pretty false`; it is clean.
+- 2026-04-09: Re-ran `tsc -p src/tsconfig.json --noEmit --pretty false`; the only failures remain the pre-existing `src/vs/platform/environment/test/node/argv.test.ts` errors at lines 116 and 146.
+- 2026-04-09: Rebuilt `extensions/configuration-editing/out` for validation and re-ran the configuration-editing integration suite; all 18 tests passed, including the new local launch/tasks/extensions coverage.
+- 2026-04-09: Re-ran the focused browser suite from `/Users/seth/src/vscode`; all 14 focused local-workspace tests passed after refreshing the touched worktree files into the built `out/` tree.
+- 2026-04-09: Re-ran the targeted electron-sandbox extension recommendations suite from `/Users/seth/src/vscode`; the new Local Folder and Local Workspace recommendation tests both passed.
+- 2026-04-09: File-family critique pass 1 kept the branch story coherent across settings, tasks, launch, and extensions instead of leaving `extensions` on a separate shared-only path.
+- 2026-04-09: File-family critique pass 2 removed a contract regression in `getExtensionsConfigs()` by returning only real config sources for aggregation while still exposing empty targets to add/remove flows.
+- 2026-04-09: File-family critique pass 3 kept `git diff --check` clean and verified that the main checkout used for focused validation had no tracked changes.

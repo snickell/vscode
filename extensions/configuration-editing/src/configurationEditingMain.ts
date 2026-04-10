@@ -14,6 +14,21 @@ const settingsSelector: vscode.DocumentSelector = [
 	{ language: 'jsonc', pattern: '**/settings.local.json' },
 ];
 
+const launchSelector: vscode.DocumentSelector = [
+	{ language: 'jsonc', pattern: '**/launch.json' },
+	{ language: 'jsonc', pattern: '**/launch.local.json' },
+];
+
+const tasksSelector: vscode.DocumentSelector = [
+	{ language: 'jsonc', pattern: '**/tasks.json' },
+	{ language: 'jsonc', pattern: '**/tasks.local.json' },
+];
+
+const extensionsSelector: vscode.DocumentSelector = [
+	{ language: 'jsonc', pattern: '**/extensions.json' },
+	{ language: 'jsonc', pattern: '**/extensions.local.json' },
+];
+
 const workspaceConfigurationSelector: vscode.DocumentSelector = [
 	{ language: 'jsonc', pattern: '**/*.code-workspace' },
 	{ language: 'jsonc', pattern: '**/*.code-workspace.local' },
@@ -28,10 +43,10 @@ export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(...registerExtensionsCompletions());
 
 	// launch.json variable suggestions
-	context.subscriptions.push(registerVariableCompletions({ language: 'jsonc', pattern: '**/launch.json' }));
+	context.subscriptions.push(registerVariableCompletions(launchSelector));
 
 	// task.json variable suggestions
-	context.subscriptions.push(registerVariableCompletions({ language: 'jsonc', pattern: '**/tasks.json' }));
+	context.subscriptions.push(registerVariableCompletions(tasksSelector));
 
 	// Workspace file launch/tasks variable completions
 	context.subscriptions.push(registerVariableCompletions(workspaceConfigurationSelector));
@@ -120,7 +135,7 @@ function registerExtensionsCompletions(): vscode.Disposable[] {
 }
 
 function registerExtensionsCompletionsInExtensionsDocument(): vscode.Disposable {
-	return vscode.languages.registerCompletionItemProvider({ pattern: '**/extensions.json' }, {
+	return vscode.languages.registerCompletionItemProvider(extensionsSelector, {
 		provideCompletionItems(document, position, _token) {
 			const location = getLocation(document.getText(), document.offsetAt(position));
 			if (location.path[0] === 'recommendations') {
@@ -158,7 +173,7 @@ function getReplaceRange(document: vscode.TextDocument, location: Location, posi
 	return new vscode.Range(position, position);
 }
 
-vscode.languages.registerDocumentSymbolProvider({ pattern: '**/launch.json', language: 'jsonc' }, {
+vscode.languages.registerDocumentSymbolProvider(launchSelector, {
 	provideDocumentSymbols(document: vscode.TextDocument, _token: vscode.CancellationToken): vscode.ProviderResult<vscode.SymbolInformation[]> {
 		const result: vscode.SymbolInformation[] = [];
 		let name: string = '';

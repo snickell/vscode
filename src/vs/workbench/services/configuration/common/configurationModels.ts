@@ -12,20 +12,21 @@ import { ResourceMap } from 'vs/base/common/map';
 import { URI } from 'vs/base/common/uri';
 import { isBoolean } from 'vs/base/common/types';
 import { distinct } from 'vs/base/common/arrays';
+import { EXTENSIONS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, TASKS_CONFIGURATION_KEY, WORKSPACE_STANDALONE_CONFIGURATION_KEYS } from 'vs/workbench/services/configuration/common/configuration';
 
 export class WorkspaceConfigurationModelParser extends ConfigurationModelParser {
 
 	private _folders: IStoredWorkspaceFolder[] = [];
 	private _transient: boolean = false;
 	private _settingsModelParser: ConfigurationModelParser;
-	private _launchModel: ConfigurationModel;
-	private _tasksModel: ConfigurationModel;
+	private _standaloneModels = new Map<string, ConfigurationModel>();
 
 	constructor(name: string) {
 		super(name);
 		this._settingsModelParser = new ConfigurationModelParser(name);
-		this._launchModel = new ConfigurationModel();
-		this._tasksModel = new ConfigurationModel();
+		for (const key of WORKSPACE_STANDALONE_CONFIGURATION_KEYS) {
+			this._standaloneModels.set(key, new ConfigurationModel());
+		}
 	}
 
 	get folders(): IStoredWorkspaceFolder[] {
@@ -41,11 +42,19 @@ export class WorkspaceConfigurationModelParser extends ConfigurationModelParser 
 	}
 
 	get launchModel(): ConfigurationModel {
-		return this._launchModel;
+		return this.getStandaloneModel(LAUNCH_CONFIGURATION_KEY);
 	}
 
 	get tasksModel(): ConfigurationModel {
-		return this._tasksModel;
+		return this.getStandaloneModel(TASKS_CONFIGURATION_KEY);
+	}
+
+	get extensionsModel(): ConfigurationModel {
+		return this.getStandaloneModel(EXTENSIONS_CONFIGURATION_KEY);
+	}
+
+	get standaloneConfigurationModels(): ConfigurationModel[] {
+		return WORKSPACE_STANDALONE_CONFIGURATION_KEYS.map(key => this.getStandaloneModel(key));
 	}
 
 	reparseWorkspaceSettings(configurationParseOptions: ConfigurationParseOptions): void {
@@ -60,9 +69,14 @@ export class WorkspaceConfigurationModelParser extends ConfigurationModelParser 
 		this._folders = (raw['folders'] || []) as IStoredWorkspaceFolder[];
 		this._transient = isBoolean(raw['transient']) && raw['transient'];
 		this._settingsModelParser.parseRaw(raw['settings'], configurationParseOptions);
-		this._launchModel = this.createConfigurationModelFrom(raw, 'launch');
-		this._tasksModel = this.createConfigurationModelFrom(raw, 'tasks');
+		for (const key of WORKSPACE_STANDALONE_CONFIGURATION_KEYS) {
+			this._standaloneModels.set(key, this.createConfigurationModelFrom(raw, key));
+		}
 		return super.doParseRaw(raw, configurationParseOptions);
+	}
+
+	private getStandaloneModel(key: string): ConfigurationModel {
+		return this._standaloneModels.get(key) ?? new ConfigurationModel();
 	}
 
 	private createConfigurationModelFrom(raw: any, key: string): ConfigurationModel {
