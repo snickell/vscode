@@ -293,6 +293,35 @@ suite('Completions in settings.json', () => {
 	});
 });
 
+suite('Completions in Local Workspace settings', () => {
+	const testFile = path.join('.vscode', 'settings.local.json');
+
+	test('window.title', async () => {
+		const content = [
+			'{',
+			'  "window.title": "custom|"',
+			'}',
+		].join('\n');
+		const resultText = [
+			'{',
+			'  "window.title": "custom${activeEditorShort}"',
+			'}',
+		].join('\n');
+		const expected = { label: '${activeEditorShort}', resultText };
+		await testCompletion(testFile, 'jsonc', content, expected);
+	});
+
+	test('not outside the Local Workspace settings path', async () => {
+		const content = [
+			'{',
+			'  "window.title": "custom|"',
+			'}',
+		].join('\n');
+		const expected = { label: '${activeEditorShort}', notAvailable: true };
+		await testCompletion('settings.local.json', 'jsonc', content, expected);
+	});
+});
+
 suite('Completions in extensions.json', () => {
 	const testFile = 'extensions.json';
 	test('change recommendation', async () => {
@@ -548,6 +577,7 @@ async function testCompletion(testFileName: string, languageId: string, content:
 	content = content.substring(0, offset) + content.substring(offset + 1);
 
 	const docUri = vscode.Uri.file(path.join(await testFolder, testFileName));
+	await fs.mkdir(path.dirname(docUri.fsPath), { recursive: true });
 	await fs.writeFile(docUri.fsPath, content);
 
 	const editor = await setTestContent(docUri, languageId, content);
