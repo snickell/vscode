@@ -117,11 +117,23 @@
         "url": "vscode://schemas/settings/folder"
       },
       {
+        "fileMatch": "/.vscode.local/settings.json",
+        "url": "vscode://schemas/settings/folder"
+      },
+      {
         "fileMatch": "/.vscode/launch.json",
         "url": "vscode://schemas/launch"
       },
       {
+        "fileMatch": "/.vscode.local/launch.json",
+        "url": "vscode://schemas/launch"
+      },
+      {
         "fileMatch": "/.vscode/tasks.json",
+        "url": "vscode://schemas/tasks"
+      },
+      {
+        "fileMatch": "/.vscode.local/tasks.json",
         "url": "vscode://schemas/tasks"
       },
       {
@@ -154,6 +166,10 @@
       },
       {
         "fileMatch": "/.vscode/extensions.json",
+        "url": "vscode://schemas/extensions"
+      },
+      {
+        "fileMatch": "/.vscode.local/extensions.json",
         "url": "vscode://schemas/extensions"
       },
       {
