@@ -77,9 +77,9 @@
 - [x] Bring the branch onto current `origin/main`.
 - [x] Inspect the upstream diff in the relevant configuration, preferences, extensions, and configuration-editing paths.
 - [x] Port or rewrite the code on that base.
-- [ ] Commit the result.
-- [ ] Push the branch.
-- [ ] Wait for CI.
+- [x] Commit the result.
+- [x] Push the branch.
+- [x] Wait for CI.
 - [ ] Fix CI if it fails.
 
 ## Current-Main Validation
