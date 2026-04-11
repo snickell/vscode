@@ -623,7 +623,7 @@ export class ConfigurationEditing {
 		// Check for standalone workspace configurations
 		if (config.key) {
 			for (const descriptor of this.getStandaloneConfigurationDescriptors(target)) {
-				const resource = this.getConfigurationFileResource(target, descriptor, overrides.resource, undefined);
+				const resource = this.getConfigurationFileResource(target, descriptor, overrides.resource, undefined, descriptor.key);
 
 				// Check for prefix
 				if (config.key === descriptor.key) {
@@ -645,10 +645,10 @@ export class ConfigurationEditing {
 		const configurationScope = configurationProperties[key]?.scope;
 		let jsonPath = overrides.overrideIdentifiers?.length ? [keyFromOverrideIdentifiers(overrides.overrideIdentifiers), key] : [key];
 		if (target === EditableConfigurationTarget.USER_LOCAL || target === EditableConfigurationTarget.USER_REMOTE) {
-			return { key, jsonPath, value: config.value, resource: this.getConfigurationFileResource(target, undefined, null, configurationScope) ?? undefined, target };
+			return { key, jsonPath, value: config.value, resource: this.getConfigurationFileResource(target, undefined, null, configurationScope, key) ?? undefined, target };
 		}
 
-		const resource = this.getConfigurationFileResource(target, undefined, overrides.resource, configurationScope);
+		const resource = this.getConfigurationFileResource(target, undefined, overrides.resource, configurationScope, key);
 		if (this.isWorkspaceConfigurationResource(resource)) {
 			jsonPath = ['settings', ...jsonPath];
 		}
@@ -670,7 +670,7 @@ export class ConfigurationEditing {
 		return WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS;
 	}
 
-	private getConfigurationFileResource(target: EditableConfigurationTarget, descriptor: IWorkspaceFileConfigurationDescriptor | undefined, resource: URI | null | undefined, scope: ConfigurationScope | undefined): URI | null {
+	private getConfigurationFileResource(target: EditableConfigurationTarget, descriptor: IWorkspaceFileConfigurationDescriptor | undefined, resource: URI | null | undefined, scope: ConfigurationScope | undefined, settingKey?: string): URI | null {
 		if (target === EditableConfigurationTarget.USER_LOCAL) {
 			if (descriptor?.userStandalonePath) {
 				if (descriptor.key === TASKS_CONFIGURATION_KEY) {
@@ -680,7 +680,7 @@ export class ConfigurationEditing {
 					return this.userDataProfileService.currentProfile.mcpResource;
 				}
 			} else {
-				const key = descriptor?.key ?? '';
+				const key = settingKey ?? descriptor?.key ?? '';
 				if (!this.userDataProfileService.currentProfile.isDefault && this.configurationService.isSettingAppliedForAllProfiles(key)) {
 					return this.userDataProfilesService.defaultProfile.settingsResource;
 				}
@@ -704,14 +704,14 @@ export class ConfigurationEditing {
 				}
 			}
 
-				if (target === EditableConfigurationTarget.WORKSPACE_LOCAL) {
-					if (workbenchState === WorkbenchState.WORKSPACE && workspace.configuration) {
-						return getWorkspaceLocalConfigPath(workspace.configuration);
-					}
-					if (workbenchState === WorkbenchState.FOLDER) {
-						return workspace.folders[0].toResource(descriptor?.folderLocalPath ?? FOLDER_LOCAL_SETTINGS_PATH);
-					}
+			if (target === EditableConfigurationTarget.WORKSPACE_LOCAL) {
+				if (workbenchState === WorkbenchState.WORKSPACE && workspace.configuration) {
+					return getWorkspaceLocalConfigPath(workspace.configuration);
 				}
+				if (workbenchState === WorkbenchState.FOLDER) {
+					return workspace.folders[0].toResource(descriptor?.folderLocalPath ?? FOLDER_LOCAL_SETTINGS_PATH);
+				}
+			}
 
 			if (target === EditableConfigurationTarget.WORKSPACE_FOLDER) {
 				if (resource) {
@@ -722,14 +722,14 @@ export class ConfigurationEditing {
 				}
 			}
 
-				if (target === EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
-					if (resource) {
-						const folder = this.contextService.getWorkspaceFolder(resource);
-						if (folder) {
-							return folder.toResource(descriptor?.folderLocalPath ?? FOLDER_LOCAL_SETTINGS_PATH);
-						}
+			if (target === EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
+				if (resource) {
+					const folder = this.contextService.getWorkspaceFolder(resource);
+					if (folder) {
+						return folder.toResource(descriptor?.folderLocalPath ?? FOLDER_LOCAL_SETTINGS_PATH);
 					}
 				}
+			}
 		}
 		return null;
 	}
