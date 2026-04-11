@@ -5,7 +5,7 @@
 
 import { distinct } from '../../../../base/common/arrays.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { JSONPath, parse } from '../../../../base/common/json.js';
+import { JSONPath, ParseError, parse } from '../../../../base/common/json.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { getIconClasses } from '../../../../editor/common/services/getIconClasses.js';
 import { FileKind, IFileService } from '../../../../platform/files/common/files.js';
@@ -19,8 +19,10 @@ import { localize } from '../../../../nls.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IJSONEditingService, IJSONValue } from '../../configuration/common/jsonEditing.js';
 import { ResourceMap } from '../../../../base/common/map.js';
+import { FOLDER_CONFIG_FOLDER_NAME, FOLDER_EXTENSIONS_PATH, LOCAL_FOLDER_CONFIG_FOLDER_NAME, LOCAL_FOLDER_EXTENSIONS_PATH } from '../../configuration/common/configuration.js';
 
-export const EXTENSIONS_CONFIG = '.vscode/extensions.json';
+export const EXTENSIONS_CONFIG = FOLDER_EXTENSIONS_PATH;
+export const LOCAL_EXTENSIONS_CONFIG = LOCAL_FOLDER_EXTENSIONS_PATH;
 
 export interface IExtensionsConfigContent {
 	recommendations?: string[];
@@ -61,7 +63,7 @@ export class WorkspaceExtensionsConfigService extends Disposable implements IWor
 		this._register(fileService.onDidFilesChange(e => {
 			const workspace = workspaceContextService.getWorkspace();
 			if ((workspace.configuration && e.affects(workspace.configuration))
-				|| workspace.folders.some(folder => e.affects(folder.toResource(EXTENSIONS_CONFIG)))
+				|| workspace.folders.some(folder => this.affectsWorkspaceFolderExtensionsConfig(folder, e))
 			) {
 				this._onDidChangeExtensionsConfigs.fire();
 			}
@@ -285,18 +287,48 @@ export class WorkspaceExtensionsConfigService extends Disposable implements IWor
 	}
 
 	private async resolveWorkspaceFolderExtensionConfig(workspaceFolder: IWorkspaceFolder): Promise<IExtensionsConfigContent> {
+		const sharedExtensionsConfigContent = await this.resolveExtensionConfigResource(workspaceFolder.toResource(EXTENSIONS_CONFIG));
+		const localExtensionsConfigContent = await this.resolveExtensionConfigResource(workspaceFolder.toResource(LOCAL_EXTENSIONS_CONFIG), true);
+		return this.mergeExtensionConfig(sharedExtensionsConfigContent, localExtensionsConfigContent);
+	}
+
+	private affectsWorkspaceFolderExtensionsConfig(workspaceFolder: IWorkspaceFolder, event: { affects(resource: URI): boolean }): boolean {
+		return event.affects(workspaceFolder.toResource(EXTENSIONS_CONFIG))
+			|| event.affects(workspaceFolder.toResource(LOCAL_EXTENSIONS_CONFIG))
+			|| event.affects(workspaceFolder.toResource(FOLDER_CONFIG_FOLDER_NAME))
+			|| event.affects(workspaceFolder.toResource(LOCAL_FOLDER_CONFIG_FOLDER_NAME));
+	}
+
+	private async resolveExtensionConfigResource(resource: URI, ignoreParseErrors: boolean = false): Promise<IExtensionsConfigContent | undefined> {
 		try {
-			const content = await this.fileService.readFile(workspaceFolder.toResource(EXTENSIONS_CONFIG));
-			const extensionsConfigContent = <IExtensionsConfigContent>parse(content.value.toString());
+			const content = await this.fileService.readFile(resource);
+			const parseErrors: ParseError[] = [];
+			const extensionsConfigContent = <IExtensionsConfigContent>parse(content.value.toString(), parseErrors);
+			if (ignoreParseErrors && parseErrors.length) {
+				return undefined;
+			}
 			return this.parseExtensionConfig(extensionsConfigContent);
 		} catch (e) { /* ignore */ }
-		return {};
+		return undefined;
+	}
+
+	private mergeExtensionConfig(shared: IExtensionsConfigContent | undefined, local: IExtensionsConfigContent | undefined): IExtensionsConfigContent {
+		if (!shared) {
+			return local ?? {};
+		}
+		if (!local) {
+			return shared;
+		}
+		return {
+			recommendations: local.recommendations ?? shared.recommendations,
+			unwantedRecommendations: local.unwantedRecommendations ?? shared.unwantedRecommendations
+		};
 	}
 
 	private parseExtensionConfig(extensionsConfigContent: IExtensionsConfigContent): IExtensionsConfigContent {
 		return {
-			recommendations: distinct((extensionsConfigContent.recommendations || []).map(e => e.toLowerCase())),
-			unwantedRecommendations: distinct((extensionsConfigContent.unwantedRecommendations || []).map(e => e.toLowerCase()))
+			recommendations: extensionsConfigContent.recommendations ? distinct(extensionsConfigContent.recommendations.map(e => e.toLowerCase())) : undefined,
+			unwantedRecommendations: extensionsConfigContent.unwantedRecommendations ? distinct(extensionsConfigContent.unwantedRecommendations.map(e => e.toLowerCase())) : undefined
 		};
 	}
 

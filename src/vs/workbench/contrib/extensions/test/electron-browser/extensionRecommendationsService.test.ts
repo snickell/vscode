@@ -320,20 +320,31 @@ suite('ExtensionRecommendationsService Test', () => {
 		});
 	});
 
-	function setUpFolderWorkspace(folderName: string, recommendedExtensions: string[], ignoredRecommendations: string[] = []): Promise<void> {
-		return setUpFolder(folderName, recommendedExtensions, ignoredRecommendations);
+	function setUpFolderWorkspace(folderName: string, recommendedExtensions?: string[], ignoredRecommendations: string[] = [], localRecommendedExtensions?: string[], localIgnoredRecommendations?: string[], invalidLocalContent?: string): Promise<void> {
+		return setUpFolder(folderName, recommendedExtensions, ignoredRecommendations, localRecommendedExtensions, localIgnoredRecommendations, invalidLocalContent);
 	}
 
-	async function setUpFolder(folderName: string, recommendedExtensions: string[], ignoredRecommendations: string[] = []): Promise<void> {
+	async function setUpFolder(folderName: string, recommendedExtensions?: string[], ignoredRecommendations: string[] = [], localRecommendedExtensions?: string[], localIgnoredRecommendations?: string[], invalidLocalContent?: string): Promise<void> {
 		const fileService = instantiationService.get(IFileService);
 		const folderDir = joinPath(ROOT, folderName);
 		const workspaceSettingsDir = joinPath(folderDir, '.vscode');
 		await fileService.createFolder(workspaceSettingsDir);
-		const configPath = joinPath(workspaceSettingsDir, 'extensions.json');
-		await fileService.writeFile(configPath, VSBuffer.fromString(JSON.stringify({
-			'recommendations': recommendedExtensions,
-			'unwantedRecommendations': ignoredRecommendations,
-		}, null, '\t')));
+		if (recommendedExtensions !== undefined) {
+			const configPath = joinPath(workspaceSettingsDir, 'extensions.json');
+			await fileService.writeFile(configPath, VSBuffer.fromString(JSON.stringify({
+				'recommendations': recommendedExtensions,
+				'unwantedRecommendations': ignoredRecommendations,
+			}, null, '\t')));
+		}
+		if (localRecommendedExtensions || localIgnoredRecommendations || invalidLocalContent !== undefined) {
+			const localWorkspaceSettingsDir = joinPath(folderDir, '.vscode.local');
+			await fileService.createFolder(localWorkspaceSettingsDir);
+			const localConfigPath = joinPath(localWorkspaceSettingsDir, 'extensions.json');
+			await fileService.writeFile(localConfigPath, VSBuffer.fromString(invalidLocalContent ?? JSON.stringify({
+				'recommendations': localRecommendedExtensions,
+				'unwantedRecommendations': localIgnoredRecommendations,
+			}, null, '\t')));
+		}
 
 		const myWorkspace = testWorkspace(folderDir);
 
@@ -396,6 +407,57 @@ suite('ExtensionRecommendationsService Test', () => {
 			assert.strictEqual(recommendations.indexOf(x.toLowerCase()) > -1, true);
 		});
 	}));
+
+	test('ExtensionRecommendationsService: Local extensions override shared recommendations', async () => {
+		await setUpFolderWorkspace('myFolder', ['mockPublisher1.mockExtension1'], [], ['mockPublisher2.mockExtension2']);
+		testObject = disposableStore.add(instantiationService.createInstance(ExtensionRecommendationsService));
+
+		await testObject.activationPromise;
+		const recommendations = Object.keys(testObject.getAllRecommendationsWithReason());
+		assert.deepStrictEqual(recommendations, ['mockpublisher2.mockextension2']);
+	});
+
+	test('ExtensionRecommendationsService: Local extensions apply without a shared extensions.json file', async () => {
+		await setUpFolderWorkspace('myFolder', undefined, [], ['mockPublisher2.mockExtension2']);
+		testObject = disposableStore.add(instantiationService.createInstance(ExtensionRecommendationsService));
+
+		await testObject.activationPromise;
+		const recommendations = Object.keys(testObject.getAllRecommendationsWithReason());
+		assert.deepStrictEqual(recommendations, ['mockpublisher2.mockextension2']);
+	});
+
+	test('ExtensionRecommendationsService: Invalid local extensions overrides fall back to shared recommendations', async () => {
+		await setUpFolderWorkspace('myFolder', ['mockPublisher1.mockExtension1'], [], undefined, undefined, '{ "recommendations": ["mockPublisher2.mockExtension2"]');
+		testObject = disposableStore.add(instantiationService.createInstance(ExtensionRecommendationsService));
+
+		await testObject.activationPromise;
+		const recommendations = Object.keys(testObject.getAllRecommendationsWithReason());
+		assert.deepStrictEqual(recommendations, ['mockpublisher1.mockextension1']);
+	});
+
+	test('ExtensionRecommendationsService: Local extensions create and parent-folder delete refresh recommendations', async () => {
+		await setUpFolderWorkspace('myFolder', ['mockPublisher1.mockExtension1']);
+		testObject = disposableStore.add(instantiationService.createInstance(ExtensionRecommendationsService));
+		await testObject.activationPromise;
+
+		const fileService = instantiationService.get(IFileService);
+		const folderDir = joinPath(ROOT, 'myFolder');
+		const localWorkspaceSettingsDir = joinPath(folderDir, '.vscode.local');
+		const localConfigPath = joinPath(localWorkspaceSettingsDir, 'extensions.json');
+
+		await fileService.createFolder(localWorkspaceSettingsDir);
+		let recommendationChange = Event.toPromise(testObject.onDidChangeRecommendations);
+		await fileService.writeFile(localConfigPath, VSBuffer.fromString(JSON.stringify({
+			recommendations: ['mockPublisher2.mockExtension2']
+		}, null, '\t')));
+		await recommendationChange;
+		assert.deepStrictEqual(Object.keys(testObject.getAllRecommendationsWithReason()), ['mockpublisher2.mockextension2']);
+
+		recommendationChange = Event.toPromise(testObject.onDidChangeRecommendations);
+		await fileService.del(localWorkspaceSettingsDir, { recursive: true });
+		await recommendationChange;
+		assert.deepStrictEqual(Object.keys(testObject.getAllRecommendationsWithReason()), ['mockpublisher1.mockextension1']);
+	});
 
 	test('ExtensionRecommendationsService: No Prompt for valid workspace recommendations if they are already installed', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
 		instantiationService.stubPromise(IExtensionManagementService, 'getInstalled', mockExtensionLocal);
