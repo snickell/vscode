@@ -17,7 +17,7 @@ import { localize } from '../../../../nls.js';
 import { CONFIGURATION_INHERITANCE_KEY } from './configuration.js';
 
 type ConfigurationValue = string | number | boolean | null | ConfigurationValue[] | ConfigurationObject;
-interface ConfigurationObject { [key: string]: ConfigurationValue; }
+interface ConfigurationObject { [key: string]: ConfigurationValue }
 
 export interface IResolvedConfigurationInheritance {
 	readonly raw: ConfigurationObject;
