@@ -46,6 +46,11 @@ export interface IWorkspaceFileConfigurationDescriptor {
 	readonly userStandalonePath?: string;
 }
 
+export type WorkspaceFileSectionDescriptor = IWorkspaceFileConfigurationDescriptor & { readonly workspaceSection: string };
+export type LocalWorkspaceFileConfigurationDescriptor = IWorkspaceFileConfigurationDescriptor & { readonly folderLocalPath: string };
+export type LocalWorkspaceFileSectionDescriptor = WorkspaceFileSectionDescriptor & LocalWorkspaceFileConfigurationDescriptor;
+export type UserStandaloneConfigurationDescriptor = IWorkspaceFileConfigurationDescriptor & { readonly userStandalonePath: string };
+
 function createStandaloneDescriptor(
 	key: StandaloneWorkspaceFileConfigurationKey,
 	options: { workspaceSection?: string; folderLocalPath?: string; userStandalonePath?: string } = {}
@@ -86,11 +91,30 @@ export const WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS: readonly IWorkspaceFileCo
 	}),
 ] as const;
 
-export const WORKSPACE_FILE_SECTION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => !!descriptor.workspaceSection);
-export const LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => !!descriptor.folderLocalPath);
+function hasWorkspaceSection(descriptor: IWorkspaceFileConfigurationDescriptor): descriptor is WorkspaceFileSectionDescriptor {
+	return typeof descriptor.workspaceSection === 'string';
+}
+
+function hasFolderLocalPath(descriptor: IWorkspaceFileConfigurationDescriptor): descriptor is LocalWorkspaceFileConfigurationDescriptor {
+	return typeof descriptor.folderLocalPath === 'string';
+}
+
+function hasWorkspaceSectionAndFolderLocalPath(descriptor: IWorkspaceFileConfigurationDescriptor): descriptor is LocalWorkspaceFileSectionDescriptor {
+	return hasWorkspaceSection(descriptor) && hasFolderLocalPath(descriptor);
+}
+
+function hasUserStandalonePath(descriptor: IWorkspaceFileConfigurationDescriptor): descriptor is UserStandaloneConfigurationDescriptor {
+	return typeof descriptor.userStandalonePath === 'string';
+}
+
+export const WORKSPACE_FILE_SECTION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(hasWorkspaceSection);
+export const LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(hasFolderLocalPath);
+export const LOCAL_WORKSPACE_FILE_SECTION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(hasWorkspaceSectionAndFolderLocalPath);
 export const WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => descriptor.folderType === 'standalone');
+export const WORKSPACE_STANDALONE_SECTION_DESCRIPTORS = WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.filter(hasWorkspaceSection);
 export const LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS = LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => descriptor.folderType === 'standalone');
-export const USER_STANDALONE_CONFIGURATION_DESCRIPTORS = WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.filter(descriptor => !!descriptor.userStandalonePath);
+export const LOCAL_WORKSPACE_STANDALONE_SECTION_DESCRIPTORS = LOCAL_WORKSPACE_FILE_SECTION_DESCRIPTORS.filter(descriptor => descriptor.folderType === 'standalone');
+export const USER_STANDALONE_CONFIGURATION_DESCRIPTORS = WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.filter(hasUserStandalonePath);
 export const WORKSPACE_STANDALONE_CONFIGURATION_KEYS = WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key);
 export const LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_KEYS = LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key);
 
@@ -116,6 +140,14 @@ export function getWorkspaceFileConfigurationDescriptor(key: string): IWorkspace
 	return WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.find(descriptor => descriptor.key === key);
 }
 
-export function getLocalWorkspaceFileConfigurationDescriptor(key: string): IWorkspaceFileConfigurationDescriptor | undefined {
+export function getWorkspaceFileSectionDescriptor(key: string): WorkspaceFileSectionDescriptor | undefined {
+	return WORKSPACE_FILE_SECTION_DESCRIPTORS.find(descriptor => descriptor.key === key);
+}
+
+export function getLocalWorkspaceFileConfigurationDescriptor(key: string): LocalWorkspaceFileConfigurationDescriptor | undefined {
 	return LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.find(descriptor => descriptor.key === key);
+}
+
+export function getLocalWorkspaceFileSectionDescriptor(key: string): LocalWorkspaceFileSectionDescriptor | undefined {
+	return LOCAL_WORKSPACE_FILE_SECTION_DESCRIPTORS.find(descriptor => descriptor.key === key);
 }

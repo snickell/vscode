@@ -20,14 +20,14 @@ import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../.
 import { IWorkspaceContextService, IWorkspaceFolder } from '../../../../platform/workspace/common/workspace.js';
 import { getWorkspaceLocalConfigPath } from '../../configuration/common/configuration.js';
 import { IJSONEditingService, IJSONValue } from '../../configuration/common/jsonEditing.js';
-import { EXTENSIONS_CONFIGURATION_KEY, getLocalWorkspaceFileConfigurationDescriptor, getWorkspaceFileConfigurationDescriptor } from '../../configuration/common/workspaceFileConfiguration.js';
+import { EXTENSIONS_CONFIGURATION_KEY, getLocalWorkspaceFileSectionDescriptor, getWorkspaceFileSectionDescriptor } from '../../configuration/common/workspaceFileConfiguration.js';
 
-const extensionsConfigurationDescriptor = getWorkspaceFileConfigurationDescriptor(EXTENSIONS_CONFIGURATION_KEY)!;
-const localExtensionsConfigurationDescriptor = getLocalWorkspaceFileConfigurationDescriptor(EXTENSIONS_CONFIGURATION_KEY)!;
-const workspaceExtensionsJsonPathPrefix = [extensionsConfigurationDescriptor.workspaceSection ?? extensionsConfigurationDescriptor.key];
+const extensionsConfigurationDescriptor = getWorkspaceFileSectionDescriptor(EXTENSIONS_CONFIGURATION_KEY)!;
+const localExtensionsConfigurationDescriptor = getLocalWorkspaceFileSectionDescriptor(EXTENSIONS_CONFIGURATION_KEY)!;
+const workspaceExtensionsJsonPathPrefix = [extensionsConfigurationDescriptor.workspaceSection];
 
 export const EXTENSIONS_CONFIG = extensionsConfigurationDescriptor.folderSharedPath;
-export const EXTENSIONS_LOCAL_CONFIG = localExtensionsConfigurationDescriptor.folderLocalPath!;
+export const EXTENSIONS_LOCAL_CONFIG = localExtensionsConfigurationDescriptor.folderLocalPath;
 
 interface IExtensionsTargetDescriptor {
 	readonly kind: 'workspaceFolder' | 'workspaceFolderLocal';
@@ -239,7 +239,7 @@ export class WorkspaceExtensionsConfigService extends Disposable implements IWor
 	private async resolveWorkspaceExtensionConfig(resource: URI): Promise<IExtensionsConfigContent | undefined> {
 		try {
 			const content = await this.fileService.readFile(resource);
-			const extensionsConfigContent = parse(content.value.toString())[extensionsConfigurationDescriptor.workspaceSection ?? EXTENSIONS_CONFIGURATION_KEY] as IExtensionsConfigContent | undefined;
+			const extensionsConfigContent = parse(content.value.toString())[extensionsConfigurationDescriptor.workspaceSection] as IExtensionsConfigContent | undefined;
 			return extensionsConfigContent ? this.parseExtensionConfig(extensionsConfigContent) : undefined;
 		} catch {
 			return undefined;

@@ -57,6 +57,7 @@ Current signals:
 - the upstream review is complete
 - the current-main code port is complete, including the post-merge syntax repairs and the current-tree cleanup that moved workbench configuration constants back onto the canonical descriptor module
 - the workbench-only constructor compatibility branch was removed; current callers in sessions and tests now pass explicit empty local models instead
+- the current follow-on cleanup tightened the descriptor surface so the typed local and sectioned subsets exist explicitly in `workspaceFileConfiguration.ts`, instead of leaving consumers to combine optional fields with assertions
 - `NODE_OPTIONS=--max-old-space-size=8192 ./node_modules/.bin/tsc -p src/tsconfig.json --noEmit --pretty false --skipLibCheck` passes
 - `./node_modules/.bin/tsc -p extensions/configuration-editing/tsconfig.json --noEmit --pretty false --skipLibCheck` passes
 - direct source-level mocha validation passes for the descriptor regression in `configurationModels.test.ts` and the Local Workspace inspect case in `extHostConfiguration.test.ts`

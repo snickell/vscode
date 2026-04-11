@@ -15,7 +15,7 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { Workspace } from '../../../../platform/workspace/common/workspace.js';
 import { IStoredWorkspaceFolder } from '../../../../platform/workspaces/common/workspaces.js';
 import { EXTENSIONS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, TASKS_CONFIGURATION_KEY } from './configuration.js';
-import { type IWorkspaceFileConfigurationDescriptor, WORKSPACE_FILE_SECTION_DESCRIPTORS } from './workspaceFileConfiguration.js';
+import { type WorkspaceFileSectionDescriptor, WORKSPACE_STANDALONE_SECTION_DESCRIPTORS } from './workspaceFileConfiguration.js';
 
 export class WorkspaceConfigurationModelParser extends ConfigurationModelParser {
 
@@ -27,7 +27,7 @@ export class WorkspaceConfigurationModelParser extends ConfigurationModelParser 
 	constructor(
 		name: string,
 		logService: ILogService,
-		private readonly standaloneConfigurationDescriptors: readonly IWorkspaceFileConfigurationDescriptor[] = WORKSPACE_FILE_SECTION_DESCRIPTORS.filter(descriptor => descriptor.key !== 'settings')
+		private readonly standaloneConfigurationDescriptors: readonly WorkspaceFileSectionDescriptor[] = WORKSPACE_STANDALONE_SECTION_DESCRIPTORS
 	) {
 		super(name, logService);
 		this._settingsModelParser = new ConfigurationModelParser(name, logService);
@@ -77,7 +77,7 @@ export class WorkspaceConfigurationModelParser extends ConfigurationModelParser 
 		this._transient = isBoolean(raw.transient) && raw.transient;
 		this._settingsModelParser.parseRaw(raw.settings as IStringDictionary<unknown>, configurationParseOptions);
 		for (const descriptor of this.standaloneConfigurationDescriptors) {
-			this._standaloneModels.set(descriptor.key, this.createConfigurationModelFrom(raw, descriptor.workspaceSection ?? descriptor.key));
+			this._standaloneModels.set(descriptor.key, this.createConfigurationModelFrom(raw, descriptor.workspaceSection));
 		}
 		return super.doParseRaw(raw, configurationParseOptions);
 	}

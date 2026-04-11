@@ -13,7 +13,7 @@ import { FileChangeType, FileChangesEvent, IFileService, whenProviderRegistered,
 import { ConfigurationModel, ConfigurationModelParser, ConfigurationParseOptions, UserSettings } from '../../../../platform/configuration/common/configurationModels.js';
 import { WorkspaceConfigurationModelParser, StandaloneConfigurationModelParser } from '../common/configurationModels.js';
 import { FOLDER_LOCAL_SETTINGS_NAME, FOLDER_SETTINGS_NAME, IConfigurationCache, ConfigurationKey, REMOTE_MACHINE_SCOPES, FOLDER_SCOPES, WORKSPACE_SCOPES, APPLY_ALL_PROFILES_SETTING, APPLICATION_SCOPES, getWorkspaceLocalConfigPath } from '../common/configuration.js';
-import { TASKS_CONFIGURATION_KEY, MCP_CONFIGURATION_KEY, WORKSPACE_FILE_SECTION_DESCRIPTORS, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, WORKSPACE_STANDALONE_CONFIGURATION_KEYS, LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_KEYS, type IWorkspaceFileConfigurationDescriptor } from '../common/workspaceFileConfiguration.js';
+import { TASKS_CONFIGURATION_KEY, MCP_CONFIGURATION_KEY, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, WORKSPACE_STANDALONE_CONFIGURATION_KEYS, WORKSPACE_STANDALONE_SECTION_DESCRIPTORS, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_KEYS, LOCAL_WORKSPACE_STANDALONE_SECTION_DESCRIPTORS, type IWorkspaceFileConfigurationDescriptor, type LocalWorkspaceFileConfigurationDescriptor } from '../common/workspaceFileConfiguration.js';
 import { IStoredWorkspaceFolder } from '../../../../platform/workspaces/common/workspaces.js';
 import { WorkbenchState, IWorkspaceFolder, IWorkspaceIdentifier } from '../../../../platform/workspace/common/workspace.js';
 import { ConfigurationScope, Extensions, IConfigurationRegistry, OVERRIDE_PROPERTY_REGEX } from '../../../../platform/configuration/common/configurationRegistry.js';
@@ -784,8 +784,8 @@ class FileServiceBasedWorkspaceConfiguration extends Disposable {
 	) {
 		super();
 
-		this.workspaceConfigurationModelParser = new WorkspaceConfigurationModelParser('', logService, WORKSPACE_FILE_SECTION_DESCRIPTORS.filter(descriptor => descriptor.key !== 'settings'));
-		this.workspaceLocalConfigurationModelParser = new WorkspaceConfigurationModelParser('', logService, LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => descriptor.key !== 'settings'));
+		this.workspaceConfigurationModelParser = new WorkspaceConfigurationModelParser('', logService, WORKSPACE_STANDALONE_SECTION_DESCRIPTORS);
+		this.workspaceLocalConfigurationModelParser = new WorkspaceConfigurationModelParser('', logService, LOCAL_WORKSPACE_STANDALONE_SECTION_DESCRIPTORS);
 		this.workspaceSettings = ConfigurationModel.createEmptyModel(logService);
 		this.workspaceLocalSettings = ConfigurationModel.createEmptyModel(logService);
 
@@ -824,8 +824,8 @@ class FileServiceBasedWorkspaceConfiguration extends Disposable {
 	async load(workspaceIdentifier: IWorkspaceIdentifier, configurationParseOptions: ConfigurationParseOptions): Promise<void> {
 		if (!this._workspaceIdentifier || this._workspaceIdentifier.id !== workspaceIdentifier.id) {
 			this._workspaceIdentifier = workspaceIdentifier;
-			this.workspaceConfigurationModelParser = new WorkspaceConfigurationModelParser(this._workspaceIdentifier.id, this.logService, WORKSPACE_FILE_SECTION_DESCRIPTORS.filter(descriptor => descriptor.key !== 'settings'));
-			this.workspaceLocalConfigurationModelParser = new WorkspaceConfigurationModelParser(`${this._workspaceIdentifier.id}.local`, this.logService, LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => descriptor.key !== 'settings'));
+			this.workspaceConfigurationModelParser = new WorkspaceConfigurationModelParser(this._workspaceIdentifier.id, this.logService, WORKSPACE_STANDALONE_SECTION_DESCRIPTORS);
+			this.workspaceLocalConfigurationModelParser = new WorkspaceConfigurationModelParser(`${this._workspaceIdentifier.id}.local`, this.logService, LOCAL_WORKSPACE_STANDALONE_SECTION_DESCRIPTORS);
 			dispose(this.workspaceConfigWatcher);
 			this.workspaceConfigWatcher = this._register(this.watchWorkspaceConfigurationFile());
 		}
@@ -896,8 +896,8 @@ class CachedWorkspaceConfiguration {
 		private readonly configurationCache: IConfigurationCache,
 		private readonly logService: ILogService
 	) {
-		this.workspaceConfigurationModelParser = new WorkspaceConfigurationModelParser('', logService, WORKSPACE_FILE_SECTION_DESCRIPTORS.filter(descriptor => descriptor.key !== 'settings'));
-		this.workspaceLocalConfigurationModelParser = new WorkspaceConfigurationModelParser('', logService, LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => descriptor.key !== 'settings'));
+		this.workspaceConfigurationModelParser = new WorkspaceConfigurationModelParser('', logService, WORKSPACE_STANDALONE_SECTION_DESCRIPTORS);
+		this.workspaceLocalConfigurationModelParser = new WorkspaceConfigurationModelParser('', logService, LOCAL_WORKSPACE_STANDALONE_SECTION_DESCRIPTORS);
 		this.workspaceSettings = ConfigurationModel.createEmptyModel(logService);
 		this.workspaceLocalSettings = ConfigurationModel.createEmptyModel(logService);
 	}
@@ -908,8 +908,8 @@ class CachedWorkspaceConfiguration {
 			const contents = await this.configurationCache.read(key);
 			const parsed: { content?: string; localContent?: string } = JSON.parse(contents);
 			if (parsed.content || parsed.localContent) {
-				this.workspaceConfigurationModelParser = new WorkspaceConfigurationModelParser(key.key, this.logService, WORKSPACE_FILE_SECTION_DESCRIPTORS.filter(descriptor => descriptor.key !== 'settings'));
-				this.workspaceLocalConfigurationModelParser = new WorkspaceConfigurationModelParser(`${key.key}.local`, this.logService, LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => descriptor.key !== 'settings'));
+				this.workspaceConfigurationModelParser = new WorkspaceConfigurationModelParser(key.key, this.logService, WORKSPACE_STANDALONE_SECTION_DESCRIPTORS);
+				this.workspaceLocalConfigurationModelParser = new WorkspaceConfigurationModelParser(`${key.key}.local`, this.logService, LOCAL_WORKSPACE_STANDALONE_SECTION_DESCRIPTORS);
 				this.workspaceConfigurationModelParser.parse(parsed.content ?? '', configurationParseOptions);
 				this.workspaceLocalConfigurationModelParser.parse(parsed.localContent ?? '', configurationParseOptions);
 				this.consolidate();
@@ -1157,7 +1157,9 @@ export class FolderConfiguration extends Disposable {
 
 	private createFileServiceBasedConfiguration(fileService: IFileService, uriIdentityService: IUriIdentityService, logService: ILogService, settingsName: string, standAloneConfigurations: readonly IWorkspaceFileConfigurationDescriptor[], local: boolean) {
 		const settingsResource = uriIdentityService.extUri.joinPath(this.configurationFolder, `${settingsName}.json`);
-		const standAloneConfigurationResources: [string, URI][] = standAloneConfigurations.map(descriptor => ([descriptor.key, uriIdentityService.extUri.joinPath(this.workspaceFolder.uri, local ? descriptor.folderLocalPath! : descriptor.folderSharedPath)]));
+		const standAloneConfigurationResources: [string, URI][] = local
+			? (standAloneConfigurations as readonly LocalWorkspaceFileConfigurationDescriptor[]).map(descriptor => ([descriptor.key, uriIdentityService.extUri.joinPath(this.workspaceFolder.uri, descriptor.folderLocalPath)]))
+			: standAloneConfigurations.map(descriptor => ([descriptor.key, uriIdentityService.extUri.joinPath(this.workspaceFolder.uri, descriptor.folderSharedPath)]));
 		return new FileServiceBasedConfiguration(this.configurationFolder.toString(), settingsResource, standAloneConfigurationResources, { scopes: this.scopes, skipRestricted: this.isUntrusted() }, fileService, uriIdentityService, logService);
 	}
 
