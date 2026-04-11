@@ -1707,7 +1707,9 @@ suite('WorkspaceConfigurationService - Folder', () => {
 
 		const cachedFileService = disposables.add(new FileService(logService));
 		const cachedRootProvider = disposables.add(new InMemoryFileSystemProvider());
+		const cachedCacheProvider = disposables.add(new InMemoryFileSystemProvider());
 		disposables.add(cachedFileService.registerProvider(ROOT.scheme, cachedRootProvider));
+		disposables.add(cachedFileService.registerProvider(cacheScheme, cachedCacheProvider));
 		const cachedUriIdentityService = disposables.add(new UriIdentityService(cachedFileService));
 		const cachedEnvironmentService = TestEnvironmentService;
 		const cachedUserDataProfilesService = disposables.add(new UserDataProfilesService(cachedEnvironmentService, cachedFileService, cachedUriIdentityService, logService));
