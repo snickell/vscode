@@ -6,7 +6,8 @@
 import { URI } from '../../../../base/common/uri.js';
 import { Event, Emitter } from '../../../../base/common/event.js';
 import * as errors from '../../../../base/common/errors.js';
-import { Disposable, IDisposable, dispose, toDisposable, MutableDisposable, combinedDisposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import * as json from '../../../../base/common/json.js';
+import { Disposable, IDisposable, toDisposable, MutableDisposable, combinedDisposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { RunOnceScheduler } from '../../../../base/common/async.js';
 import { FileChangeType, FileChangesEvent, IFileService, whenProviderRegistered, FileOperationError, FileOperationResult, FileOperation, FileOperationEvent } from '../../../../platform/files/common/files.js';
 import { ConfigurationModel, ConfigurationModelParser, ConfigurationParseOptions, UserSettings } from '../../../../platform/configuration/common/configurationModels.js';
@@ -23,11 +24,14 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { IStringDictionary } from '../../../../base/common/collections.js';
 import { joinPath } from '../../../../base/common/resources.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
+import { ResourceMap } from '../../../../base/common/map.js';
 import { isEmptyObject, isObject } from '../../../../base/common/types.js';
 import { DefaultConfiguration as BaseDefaultConfiguration } from '../../../../platform/configuration/common/configurations.js';
 import { IJSONEditingService } from '../common/jsonEditing.js';
+import { IMarkerService, IResourceMarker } from '../../../../platform/markers/common/markers.js';
 import { IUserDataProfilesService } from '../../../../platform/userDataProfile/common/userDataProfile.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/environmentService.js';
+import { ConfigurationFileInheritance } from '../common/configurationInheritance.js';
 
 export class DefaultConfiguration extends BaseDefaultConfiguration {
 
@@ -166,6 +170,7 @@ export class UserConfiguration extends Disposable {
 	private readonly userConfiguration = this._register(new MutableDisposable<UserSettings | FileServiceBasedConfiguration>());
 	private readonly userConfigurationChangeDisposable = this._register(new MutableDisposable<IDisposable>());
 	private readonly reloadConfigurationScheduler: RunOnceScheduler;
+	private markerService: IMarkerService | undefined;
 
 	get hasTasksLoaded(): boolean { return this.userConfiguration.value instanceof FileServiceBasedConfiguration; }
 
@@ -202,6 +207,7 @@ export class UserConfiguration extends Disposable {
 			standAloneConfigurationResources.push([MCP_CONFIGURATION_KEY, this.mcpResource]);
 		}
 		const fileServiceBasedConfiguration = new FileServiceBasedConfiguration(folder.toString(), this.settingsResource, standAloneConfigurationResources, this.configurationParseOptions, this.fileService, this.uriIdentityService, this.logService);
+		fileServiceBasedConfiguration.setMarkerService(this.markerService);
 		const configurationModel = await fileServiceBasedConfiguration.loadConfiguration(settingsConfiguration);
 		this.userConfiguration.value = fileServiceBasedConfiguration;
 
@@ -232,15 +238,25 @@ export class UserConfiguration extends Disposable {
 	getRestrictedSettings(): string[] {
 		return this.userConfiguration.value!.getRestrictedSettings();
 	}
+
+	setMarkerService(markerService: IMarkerService | undefined): void {
+		this.markerService = markerService;
+		if (this.userConfiguration.value instanceof FileServiceBasedConfiguration) {
+			this.userConfiguration.value.setMarkerService(markerService);
+		}
+	}
 }
 
 class FileServiceBasedConfiguration extends Disposable {
 
-	private readonly allResources: URI[];
+	private allResources: URI[];
 	private _folderSettingsModelParser: ConfigurationModelParser;
 	private _folderSettingsParseOptions: ConfigurationParseOptions;
 	private _standAloneConfigurations: ConfigurationModel[];
 	private _cache: ConfigurationModel;
+	private readonly watchedResources = this._register(new MutableDisposable<IDisposable>());
+	private readonly inheritanceDiagnostics = new Map<string, IResourceMarker[]>();
+	private markerService: IMarkerService | undefined;
 
 	private readonly _onDidChange: Emitter<void> = this._register(new Emitter<void>());
 	readonly onDidChange: Event<void> = this._onDidChange.event;
@@ -255,17 +271,13 @@ class FileServiceBasedConfiguration extends Disposable {
 		private readonly logService: ILogService,
 	) {
 		super();
-		this.allResources = [this.settingsResource, ...this.standAloneConfigurationResources.map(([, resource]) => resource)];
-		this._register(combinedDisposable(...this.allResources.map(resource => combinedDisposable(
-			this.fileService.watch(uriIdentityService.extUri.dirname(resource)),
-			// Also listen to the resource incase the resource is a symlink - https://github.com/microsoft/vscode/issues/118134
-			this.fileService.watch(resource)
-		))));
-
+		this.allResources = [];
 		this._folderSettingsModelParser = new ConfigurationModelParser(name, logService);
 		this._folderSettingsParseOptions = configurationParseOptions;
 		this._standAloneConfigurations = [];
 		this._cache = ConfigurationModel.createEmptyModel(this.logService);
+		this.updateWatchedResources([this.settingsResource, ...this.standAloneConfigurationResources.map(([, resource]) => resource)]);
+		this._register(toDisposable(() => this.clearInheritanceDiagnostics()));
 
 		this._register(Event.debounce(
 			Event.any(
@@ -274,13 +286,19 @@ class FileServiceBasedConfiguration extends Disposable {
 			), () => undefined, 100)(() => this._onDidChange.fire()));
 	}
 
-	async resolveContents(donotResolveSettings?: boolean): Promise<[string | undefined, [string, string | undefined][]]> {
+	setMarkerService(markerService: IMarkerService | undefined): void {
+		this.markerService = markerService;
+		for (const [owner, diagnostics] of this.inheritanceDiagnostics) {
+			this.markerService?.changeAll(owner, diagnostics);
+		}
+	}
 
-		const resolveContents = async (resources: URI[]): Promise<(string | undefined)[]> => {
+	async resolveContents(): Promise<[string | undefined, [string, string | undefined][]]> {
+
+		const resolveContents = async (resources: URI[]): Promise<string[]> => {
 			return Promise.all(resources.map(async resource => {
 				try {
-					const content = await this.fileService.readFile(resource, { atomic: true });
-					return content.value.toString();
+					return (await this.fileService.readFile(resource)).value.toString();
 				} catch (error) {
 					this.logService.trace(`Error while resolving configuration file '${resource.toString()}': ${errors.getErrorMessage(error)}`);
 					if ((<FileOperationError>error).fileOperationResult !== FileOperationResult.FILE_NOT_FOUND
@@ -293,16 +311,46 @@ class FileServiceBasedConfiguration extends Disposable {
 		};
 
 		const [[settingsContent], standAloneConfigurationContents] = await Promise.all([
-			donotResolveSettings ? Promise.resolve([undefined]) : resolveContents([this.settingsResource]),
+			resolveContents([this.settingsResource]),
 			resolveContents(this.standAloneConfigurationResources.map(([, resource]) => resource)),
 		]);
 
-		return [settingsContent, standAloneConfigurationContents.map((content, index) => ([this.standAloneConfigurationResources[index][0], content]))];
+		const [resolvedSettings, resolvedStandAloneConfigurations] = await Promise.all([
+			settingsContent === undefined ? Promise.resolve(undefined) : this.createConfigurationInheritance(this.settingsResource).resolveContent(settingsContent),
+			Promise.all(standAloneConfigurationContents.map((content, index) =>
+				this.createConfigurationInheritance(this.standAloneConfigurationResources[index][1]).resolveContent(content)))
+		]);
+
+		const resources = new ResourceMap<URI>();
+		resources.set(this.settingsResource, this.settingsResource);
+		for (const [, resource] of this.standAloneConfigurationResources) {
+			resources.set(resource, resource);
+		}
+		if (resolvedSettings) {
+			for (const resource of resolvedSettings.resources) {
+				resources.set(resource, resource);
+			}
+			this.updateInheritanceDiagnostics(this.settingsResource, resolvedSettings.diagnostics);
+		} else {
+			this.updateInheritanceDiagnostics(this.settingsResource, []);
+		}
+		resolvedStandAloneConfigurations.forEach((result, index) => {
+			for (const resource of result.resources) {
+				resources.set(resource, resource);
+			}
+			this.updateInheritanceDiagnostics(this.standAloneConfigurationResources[index][1], result.diagnostics);
+		});
+		this.updateWatchedResources([...resources.values()]);
+
+		return [
+			resolvedSettings?.content,
+			resolvedStandAloneConfigurations.map((result, index) => ([this.standAloneConfigurationResources[index][0], result.content]))
+		];
 	}
 
 	async loadConfiguration(settingsConfiguration?: ConfigurationModel): Promise<ConfigurationModel> {
 
-		const [settingsContent, standAloneConfigurationContents] = await this.resolveContents(!!settingsConfiguration);
+		const [settingsContent, standAloneConfigurationContents] = await this.resolveContents();
 
 		// reset
 		this._standAloneConfigurations = [];
@@ -343,6 +391,39 @@ class FileServiceBasedConfiguration extends Disposable {
 
 	private consolidate(settingsConfiguration?: ConfigurationModel): void {
 		this._cache = (settingsConfiguration ?? this._folderSettingsModelParser.configurationModel).merge(...this._standAloneConfigurations);
+	}
+
+	private createConfigurationInheritance(resource: URI): ConfigurationFileInheritance {
+		return new ConfigurationFileInheritance(resource, this.fileService, this.uriIdentityService, this.logService);
+	}
+
+	private updateInheritanceDiagnostics(resource: URI, diagnostics: IResourceMarker[]): void {
+		const owner = this.getInheritanceDiagnosticsOwner(resource);
+		this.inheritanceDiagnostics.set(owner, diagnostics);
+		this.markerService?.changeAll(owner, diagnostics);
+	}
+
+	private clearInheritanceDiagnostics(): void {
+		for (const owner of this.inheritanceDiagnostics.keys()) {
+			this.markerService?.changeAll(owner, []);
+		}
+		this.inheritanceDiagnostics.clear();
+	}
+
+	private getInheritanceDiagnosticsOwner(resource: URI): string {
+		return `workbench.configurationInheritance:${resource.toString()}`;
+	}
+
+	private updateWatchedResources(resources: URI[]): void {
+		const uniqueResources = new ResourceMap<URI>();
+		for (const resource of resources) {
+			uniqueResources.set(resource, resource);
+		}
+		this.allResources = [...uniqueResources.values()];
+		this.watchedResources.value = combinedDisposable(...this.allResources.map(resource => combinedDisposable(
+			this.fileService.watch(this.uriIdentityService.extUri.dirname(resource)),
+			this.fileService.watch(resource)
+		)));
 	}
 
 	private handleFileChangesEvent(event: FileChangesEvent): boolean {
@@ -645,6 +726,7 @@ export class WorkspaceConfiguration extends Disposable {
 	private readonly _workspaceConfigurationDisposables = this._register(new DisposableStore());
 	private _workspaceIdentifier: IWorkspaceIdentifier | null = null;
 	private _isWorkspaceTrusted: boolean = false;
+	private markerService: IMarkerService | undefined;
 
 	private readonly _onDidUpdateConfiguration = this._register(new Emitter<boolean>());
 	public readonly onDidUpdateConfiguration = this._onDidUpdateConfiguration.event;
@@ -670,7 +752,9 @@ export class WorkspaceConfiguration extends Disposable {
 				this._workspaceConfiguration = this._cachedConfiguration;
 				this.waitAndInitialize(this._workspaceIdentifier);
 			} else {
-				this.doInitialize(new FileServiceBasedWorkspaceConfiguration(this.fileService, this.uriIdentityService, this.logService));
+				const workspaceConfiguration = new FileServiceBasedWorkspaceConfiguration(this.fileService, this.uriIdentityService, this.logService);
+				workspaceConfiguration.setMarkerService(this.markerService);
+				this.doInitialize(workspaceConfiguration);
 			}
 		}
 		await this.reload();
@@ -716,10 +800,18 @@ export class WorkspaceConfiguration extends Disposable {
 		return this._workspaceConfiguration.getRestrictedSettings();
 	}
 
+	setMarkerService(markerService: IMarkerService | undefined): void {
+		this.markerService = markerService;
+		if (this._workspaceConfiguration instanceof FileServiceBasedWorkspaceConfiguration) {
+			this._workspaceConfiguration.setMarkerService(markerService);
+		}
+	}
+
 	private async waitAndInitialize(workspaceIdentifier: IWorkspaceIdentifier): Promise<void> {
 		await whenProviderRegistered(workspaceIdentifier.configPath, this.fileService);
 		if (!(this._workspaceConfiguration instanceof FileServiceBasedWorkspaceConfiguration)) {
 			const fileServiceBasedWorkspaceConfiguration = this._register(new FileServiceBasedWorkspaceConfiguration(this.fileService, this.uriIdentityService, this.logService));
+			fileServiceBasedWorkspaceConfiguration.setMarkerService(this.markerService);
 			await fileServiceBasedWorkspaceConfiguration.load(workspaceIdentifier, { scopes: WORKSPACE_SCOPES, skipRestricted: this.isUntrusted() });
 			this.doInitialize(fileServiceBasedWorkspaceConfiguration);
 			this.onDidWorkspaceConfigurationChange(false, true);
@@ -747,7 +839,7 @@ export class WorkspaceConfiguration extends Disposable {
 
 	private async updateCache(): Promise<void> {
 		if (this._workspaceIdentifier && this.configurationCache.needsCaching(this._workspaceIdentifier.configPath) && this._workspaceConfiguration instanceof FileServiceBasedWorkspaceConfiguration) {
-			const content = await this._workspaceConfiguration.resolveContent(this._workspaceIdentifier);
+			const content = this._workspaceConfiguration.getCacheContent();
 			await this._cachedConfiguration.updateWorkspace(this._workspaceIdentifier, content);
 		}
 	}
@@ -758,28 +850,39 @@ class FileServiceBasedWorkspaceConfiguration extends Disposable {
 	workspaceConfigurationModelParser: WorkspaceConfigurationModelParser;
 	workspaceSettings: ConfigurationModel;
 	private _workspaceIdentifier: IWorkspaceIdentifier | null = null;
-	private workspaceConfigWatcher: IDisposable;
+	private readonly workspaceConfigWatcher = this._register(new MutableDisposable<IDisposable>());
+	private workspaceConfigurationResources: URI[] = [];
+	private cachedWorkspaceContent = '';
 	private readonly reloadConfigurationScheduler: RunOnceScheduler;
+	private readonly inheritanceDiagnostics = new Map<string, IResourceMarker[]>();
+	private markerService: IMarkerService | undefined;
 
 	protected readonly _onDidChange: Emitter<void> = this._register(new Emitter<void>());
 	readonly onDidChange: Event<void> = this._onDidChange.event;
 
 	constructor(
 		private readonly fileService: IFileService,
-		uriIdentityService: IUriIdentityService,
+		private readonly uriIdentityService: IUriIdentityService,
 		private readonly logService: ILogService,
 	) {
 		super();
 
 		this.workspaceConfigurationModelParser = new WorkspaceConfigurationModelParser('', logService);
 		this.workspaceSettings = ConfigurationModel.createEmptyModel(logService);
+		this._register(toDisposable(() => this.clearInheritanceDiagnostics()));
 
 		this._register(Event.any(
-			Event.filter(this.fileService.onDidFilesChange, e => !!this._workspaceIdentifier && e.contains(this._workspaceIdentifier.configPath)),
-			Event.filter(this.fileService.onDidRunOperation, e => !!this._workspaceIdentifier && (e.isOperation(FileOperation.CREATE) || e.isOperation(FileOperation.COPY) || e.isOperation(FileOperation.DELETE) || e.isOperation(FileOperation.WRITE)) && uriIdentityService.extUri.isEqual(e.resource, this._workspaceIdentifier.configPath))
+			Event.filter(this.fileService.onDidFilesChange, e => this.handleWorkspaceFileChangesEvent(e)),
+			Event.filter(this.fileService.onDidRunOperation, e => this.handleWorkspaceFileOperationEvent(e))
 		)(() => this.reloadConfigurationScheduler.schedule()));
 		this.reloadConfigurationScheduler = this._register(new RunOnceScheduler(() => this._onDidChange.fire(), 50));
-		this.workspaceConfigWatcher = this._register(this.watchWorkspaceConfigurationFile());
+	}
+
+	setMarkerService(markerService: IMarkerService | undefined): void {
+		this.markerService = markerService;
+		for (const [owner, diagnostics] of this.inheritanceDiagnostics) {
+			this.markerService?.changeAll(owner, diagnostics);
+		}
 	}
 
 	get workspaceIdentifier(): IWorkspaceIdentifier | null {
@@ -795,8 +898,7 @@ class FileServiceBasedWorkspaceConfiguration extends Disposable {
 		if (!this._workspaceIdentifier || this._workspaceIdentifier.id !== workspaceIdentifier.id) {
 			this._workspaceIdentifier = workspaceIdentifier;
 			this.workspaceConfigurationModelParser = new WorkspaceConfigurationModelParser(this._workspaceIdentifier.id, this.logService);
-			dispose(this.workspaceConfigWatcher);
-			this.workspaceConfigWatcher = this._register(this.watchWorkspaceConfigurationFile());
+			this.updateWorkspaceConfigurationWatchers([this._workspaceIdentifier.configPath]);
 		}
 		let contents = '';
 		try {
@@ -807,7 +909,11 @@ class FileServiceBasedWorkspaceConfiguration extends Disposable {
 				this.logService.error(error);
 			}
 		}
-		this.workspaceConfigurationModelParser.parse(contents, configurationParseOptions);
+		const resolvedWorkspaceConfiguration = await this.resolveWorkspaceConfiguration(contents);
+		this.cachedWorkspaceContent = resolvedWorkspaceConfiguration.content;
+		this.updateWorkspaceConfigurationWatchers(resolvedWorkspaceConfiguration.resources);
+		this.updateInheritanceDiagnostics(resolvedWorkspaceConfiguration.diagnostics);
+		this.workspaceConfigurationModelParser.parse(this.cachedWorkspaceContent, configurationParseOptions);
 		this.consolidate();
 	}
 
@@ -841,8 +947,90 @@ class FileServiceBasedWorkspaceConfiguration extends Disposable {
 		this.workspaceSettings = this.workspaceConfigurationModelParser.settingsModel.merge(this.workspaceConfigurationModelParser.launchModel, this.workspaceConfigurationModelParser.tasksModel);
 	}
 
-	private watchWorkspaceConfigurationFile(): IDisposable {
-		return this._workspaceIdentifier ? this.fileService.watch(this._workspaceIdentifier.configPath) : Disposable.None;
+	getCacheContent(): string {
+		return this.cachedWorkspaceContent;
+	}
+
+	private async resolveWorkspaceConfiguration(contents: string): Promise<{ content: string; resources: URI[]; diagnostics: IResourceMarker[] }> {
+		const raw = json.parse(contents, [], { allowEmptyContent: true, allowTrailingComma: true });
+		if (!isObject(raw) || !this._workspaceIdentifier) {
+			return { content: JSON.stringify({}), resources: this._workspaceIdentifier ? [this._workspaceIdentifier.configPath] : [], diagnostics: [] };
+		}
+
+		const inheritance = new ConfigurationFileInheritance(this._workspaceIdentifier.configPath, this.fileService, this.uriIdentityService, this.logService);
+		const resources = new ResourceMap<URI>();
+		resources.set(this._workspaceIdentifier.configPath, this._workspaceIdentifier.configPath);
+		const diagnostics: IResourceMarker[] = [];
+
+		for (const key of ['settings', 'launch', 'tasks']) {
+			const hasKey = Object.prototype.hasOwnProperty.call(raw, key);
+			const resolved = await inheritance.resolveRawContent(raw[key]);
+			for (const resource of resolved.resources) {
+				resources.set(resource, resource);
+			}
+			diagnostics.push(...resolved.diagnostics);
+			if (hasKey || Object.keys(resolved.raw).length) {
+				raw[key] = resolved.raw;
+			} else {
+				delete raw[key];
+			}
+		}
+
+		return { content: JSON.stringify(raw), resources: [...resources.values()], diagnostics };
+	}
+
+	private updateInheritanceDiagnostics(diagnostics: IResourceMarker[]): void {
+		if (!this._workspaceIdentifier) {
+			return;
+		}
+		const owner = this.getInheritanceDiagnosticsOwner(this._workspaceIdentifier.configPath);
+		this.inheritanceDiagnostics.set(owner, diagnostics);
+		this.markerService?.changeAll(owner, diagnostics);
+	}
+
+	private clearInheritanceDiagnostics(): void {
+		for (const owner of this.inheritanceDiagnostics.keys()) {
+			this.markerService?.changeAll(owner, []);
+		}
+		this.inheritanceDiagnostics.clear();
+	}
+
+	private getInheritanceDiagnosticsOwner(resource: URI): string {
+		return `workbench.configurationInheritance:${resource.toString()}`;
+	}
+
+	private updateWorkspaceConfigurationWatchers(resources: URI[]): void {
+		const uniqueResources = new ResourceMap<URI>();
+		for (const resource of resources) {
+			uniqueResources.set(resource, resource);
+		}
+		this.workspaceConfigurationResources = [...uniqueResources.values()];
+		this.workspaceConfigWatcher.value = combinedDisposable(...this.workspaceConfigurationResources.map(resource => combinedDisposable(
+			this.fileService.watch(this.uriIdentityService.extUri.dirname(resource)),
+			this.fileService.watch(resource)
+		)));
+	}
+
+	private handleWorkspaceFileChangesEvent(event: FileChangesEvent): boolean {
+		if (this.workspaceConfigurationResources.some(resource => event.contains(resource))) {
+			return true;
+		}
+		if (this.workspaceConfigurationResources.some(resource => event.contains(this.uriIdentityService.extUri.dirname(resource), FileChangeType.DELETED))) {
+			return true;
+		}
+		return false;
+	}
+
+	private handleWorkspaceFileOperationEvent(event: FileOperationEvent): boolean {
+		if ((event.isOperation(FileOperation.CREATE) || event.isOperation(FileOperation.COPY) || event.isOperation(FileOperation.DELETE) || event.isOperation(FileOperation.WRITE))
+			&& this.workspaceConfigurationResources.some(resource => this.uriIdentityService.extUri.isEqual(event.resource, resource))) {
+			return true;
+		}
+		if (event.isOperation(FileOperation.DELETE)
+			&& this.workspaceConfigurationResources.some(resource => this.uriIdentityService.extUri.isEqual(event.resource, this.uriIdentityService.extUri.dirname(resource)))) {
+			return true;
+		}
+		return false;
 	}
 
 }
@@ -1021,6 +1209,7 @@ export class FolderConfiguration extends Disposable {
 	private readonly scopes: ConfigurationScope[];
 	private readonly configurationFolder: URI;
 	private cachedFolderConfiguration: CachedFolderConfiguration;
+	private markerService: IMarkerService | undefined;
 
 	constructor(
 		useCache: boolean,
@@ -1042,12 +1231,20 @@ export class FolderConfiguration extends Disposable {
 			this.folderConfiguration = this.cachedFolderConfiguration;
 			whenProviderRegistered(workspaceFolder.uri, fileService)
 				.then(() => {
-					this.folderConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService));
+					const folderConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService));
+					if (this.markerService) {
+						folderConfiguration.setMarkerService(this.markerService);
+					}
+					this.folderConfiguration = folderConfiguration;
 					this._register(this.folderConfiguration.onDidChange(e => this.onDidFolderConfigurationChange()));
 					this.onDidFolderConfigurationChange();
 				});
 		} else {
-			this.folderConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService));
+			const folderConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService));
+			if (this.markerService) {
+				folderConfiguration.setMarkerService(this.markerService);
+			}
+			this.folderConfiguration = folderConfiguration;
 			this._register(this.folderConfiguration.onDidChange(e => this.onDidFolderConfigurationChange()));
 		}
 	}
@@ -1069,6 +1266,13 @@ export class FolderConfiguration extends Disposable {
 
 	getRestrictedSettings(): string[] {
 		return this.folderConfiguration.getRestrictedSettings();
+	}
+
+	setMarkerService(markerService: IMarkerService | undefined): void {
+		this.markerService = markerService;
+		if (this.folderConfiguration instanceof FileServiceBasedConfiguration) {
+			this.folderConfiguration.setMarkerService(markerService);
+		}
 	}
 
 	private isUntrusted(): boolean {

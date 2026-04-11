@@ -6,7 +6,7 @@
 import * as extensionsRegistry from '../../../services/extensions/common/extensionsRegistry.js';
 import * as nls from '../../../../nls.js';
 import { IDebuggerContribution, ICompound, IBreakpointContribution } from './debug.js';
-import { launchSchemaId } from '../../../services/configuration/common/configuration.js';
+import { CONFIGURATION_INHERITANCE_KEY, launchSchemaId } from '../../../services/configuration/common/configuration.js';
 import { IJSONSchema } from '../../../../base/common/jsonSchema.js';
 import { inputsSchema } from '../../../services/configurationResolver/common/configurationResolverSchema.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
@@ -196,6 +196,13 @@ export const launchSchema: IJSONSchema = {
 	required: [],
 	default: { version: '0.2.0', configurations: [], compounds: [] },
 	properties: {
+		[CONFIGURATION_INHERITANCE_KEY]: {
+			type: ['string', 'array'],
+			items: {
+				type: 'string'
+			},
+			markdownDescription: nls.localize('app.launch.json.extends', "Inherit from one or more JSON files, resolved relative to this file, before applying this file's own values.")
+		},
 		version: {
 			type: 'string',
 			description: nls.localize('app.launch.json.version', "Version of this file format."),
@@ -311,4 +318,3 @@ Registry.as<IExtensionFeaturesRegistry>(Extensions.ExtensionFeaturesRegistry).re
 	},
 	renderer: new SyncDescriptor(DebuggersDataRenderer),
 });
-

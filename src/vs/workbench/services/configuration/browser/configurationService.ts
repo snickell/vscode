@@ -15,7 +15,7 @@ import { ConfigurationModel, ConfigurationChangeEvent, mergeChanges } from '../.
 import { IConfigurationChangeEvent, ConfigurationTarget, IConfigurationOverrides, isConfigurationOverrides, IConfigurationData, IConfigurationValue, IConfigurationChange, ConfigurationTargetToString, IConfigurationUpdateOverrides, isConfigurationUpdateOverrides, IConfigurationService, IConfigurationUpdateOptions } from '../../../../platform/configuration/common/configuration.js';
 import { IPolicyConfiguration, NullPolicyConfiguration, PolicyConfiguration } from '../../../../platform/configuration/common/configurations.js';
 import { Configuration } from '../common/configurationModels.js';
-import { FOLDER_CONFIG_FOLDER_NAME, defaultSettingsSchemaId, userSettingsSchemaId, workspaceSettingsSchemaId, folderSettingsSchemaId, IConfigurationCache, machineSettingsSchemaId, LOCAL_MACHINE_SCOPES, IWorkbenchConfigurationService, RestrictedSettings, PROFILE_SCOPES, LOCAL_MACHINE_PROFILE_SCOPES, profileSettingsSchemaId, APPLY_ALL_PROFILES_SETTING, APPLICATION_SCOPES } from '../common/configuration.js';
+import { FOLDER_CONFIG_FOLDER_NAME, defaultSettingsSchemaId, userSettingsSchemaId, workspaceSettingsSchemaId, folderSettingsSchemaId, IConfigurationCache, machineSettingsSchemaId, LOCAL_MACHINE_SCOPES, IWorkbenchConfigurationService, RestrictedSettings, PROFILE_SCOPES, LOCAL_MACHINE_PROFILE_SCOPES, profileSettingsSchemaId, APPLY_ALL_PROFILES_SETTING, APPLICATION_SCOPES, CONFIGURATION_INHERITANCE_KEY } from '../common/configuration.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IConfigurationRegistry, Extensions, allSettings, windowSettings, resourceSettings, applicationSettings, machineSettings, machineOverridableSettings, ConfigurationScope, IConfigurationPropertySchema, keyFromOverrideIdentifiers, OVERRIDE_PROPERTY_PATTERN, resourceLanguageSettingsSchemaId, configurationDefaultsSchemaId, applicationMachineSettings, isConfigurationDefaultSourceEquals, ConfigurationDefaultSource } from '../../../../platform/configuration/common/configurationRegistry.js';
 import { IStoredWorkspaceFolder, isStoredWorkspaceFolder, IWorkspaceFolderCreationData, getStoredWorkspaceFolder, toWorkspaceFolders } from '../../../../platform/workspaces/common/workspaces.js';
@@ -30,6 +30,7 @@ import { IWorkbenchEnvironmentService } from '../../environment/common/environme
 import { IWorkbenchContribution, IWorkbenchContributionsRegistry, WorkbenchPhase, Extensions as WorkbenchExtensions, registerWorkbenchContribution2 } from '../../../common/contributions.js';
 import { ILifecycleService, LifecyclePhase } from '../../lifecycle/common/lifecycle.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { IMarkerService } from '../../../../platform/markers/common/markers.js';
 import { toErrorMessage } from '../../../../base/common/errorMessage.js';
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
 import { IWorkspaceTrustManagementService } from '../../../../platform/workspace/common/workspaceTrust.js';
@@ -108,6 +109,7 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 
 	private instantiationService: IInstantiationService | undefined;
 	private configurationEditing: Promise<ConfigurationEditing> | undefined;
+	private markerService: IMarkerService | undefined;
 
 	constructor(
 		{ remoteAuthority, configurationCache }: { remoteAuthority?: string; configurationCache: IConfigurationCache },
@@ -497,6 +499,13 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 
 	acquireInstantiationService(instantiationService: IInstantiationService): void {
 		this.instantiationService = instantiationService;
+		const markerService = instantiationService.invokeFunction(accessor => accessor.get(IMarkerService));
+		this.markerService = markerService;
+		this.localUserConfiguration.setMarkerService(markerService);
+		this.workspaceConfiguration.setMarkerService(markerService);
+		for (const folderConfiguration of this.cachedFolderConfigs.values()) {
+			folderConfiguration.setMarkerService(markerService);
+		}
 	}
 
 	isSettingAppliedForAllProfiles(key: string): boolean {
@@ -967,6 +976,9 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 			let folderConfiguration = this.cachedFolderConfigs.get(folder.uri);
 			if (!folderConfiguration) {
 				folderConfiguration = new FolderConfiguration(!this.initialized, folder, FOLDER_CONFIG_FOLDER_NAME, this.getWorkbenchState(), this.isWorkspaceTrusted, this.fileService, this.uriIdentityService, this.logService, this.configurationCache);
+				if (this.markerService) {
+					folderConfiguration.setMarkerService(this.markerService);
+				}
 				folderConfiguration.addRelated(folderConfiguration.onDidChange(() => this.onWorkspaceFolderConfigurationChanged(folder)));
 				this.cachedFolderConfigs.set(folder.uri, folderConfiguration);
 			}
@@ -1178,6 +1190,17 @@ class RegisterConfigurationSchemasContribution extends Disposable implements IWo
 	}
 
 	private registerConfigurationSchemas(): void {
+		const settingsInheritanceProperty: IJSONSchema = {
+			description: localize('settingsInheritance.description', "Relative settings file(s) to inherit before this file. Later inherited files override earlier ones, and this file overrides them all."),
+			oneOf: [
+				{ type: 'string' },
+				{
+					type: 'array',
+					items: { type: 'string' }
+				}
+			]
+		};
+
 		// Ensure deprecationMessage is plain text for properties where it was derived from
 		// markdownDeprecationMessage, since the JSON editor diagnostics don't support markdown.
 		for (const key of Object.keys(allSettings.properties)) {
@@ -1188,7 +1211,7 @@ class RegisterConfigurationSchemasContribution extends Disposable implements IWo
 		}
 
 		const allSettingsSchema: IJSONSchema = {
-			properties: allSettings.properties,
+			properties: { [CONFIGURATION_INHERITANCE_KEY]: settingsInheritanceProperty, ...allSettings.properties },
 			patternProperties: allSettings.patternProperties,
 			additionalProperties: true,
 			allowTrailingCommas: true,
@@ -1198,6 +1221,7 @@ class RegisterConfigurationSchemasContribution extends Disposable implements IWo
 		const userSettingsSchema: IJSONSchema = this.environmentService.remoteAuthority ?
 			{
 				properties: Object.assign({},
+					{ [CONFIGURATION_INHERITANCE_KEY]: settingsInheritanceProperty },
 					applicationSettings.properties,
 					windowSettings.properties,
 					resourceSettings.properties
@@ -1211,6 +1235,7 @@ class RegisterConfigurationSchemasContribution extends Disposable implements IWo
 
 		const profileSettingsSchema: IJSONSchema = {
 			properties: Object.assign({},
+				{ [CONFIGURATION_INHERITANCE_KEY]: settingsInheritanceProperty },
 				machineSettings.properties,
 				machineOverridableSettings.properties,
 				windowSettings.properties,
@@ -1224,6 +1249,7 @@ class RegisterConfigurationSchemasContribution extends Disposable implements IWo
 
 		const machineSettingsSchema: IJSONSchema = {
 			properties: Object.assign({},
+				{ [CONFIGURATION_INHERITANCE_KEY]: settingsInheritanceProperty },
 				applicationMachineSettings.properties,
 				machineSettings.properties,
 				machineOverridableSettings.properties,
@@ -1238,6 +1264,7 @@ class RegisterConfigurationSchemasContribution extends Disposable implements IWo
 
 		const workspaceSettingsSchema: IJSONSchema = {
 			properties: Object.assign({},
+				{ [CONFIGURATION_INHERITANCE_KEY]: settingsInheritanceProperty },
 				this.checkAndFilterPropertiesRequiringTrust(machineOverridableSettings.properties),
 				this.checkAndFilterPropertiesRequiringTrust(windowSettings.properties),
 				this.checkAndFilterPropertiesRequiringTrust(resourceSettings.properties)
@@ -1265,6 +1292,7 @@ class RegisterConfigurationSchemasContribution extends Disposable implements IWo
 		const folderSettingsSchema: IJSONSchema = WorkbenchState.WORKSPACE === this.workspaceContextService.getWorkbenchState() ?
 			{
 				properties: Object.assign({},
+					{ [CONFIGURATION_INHERITANCE_KEY]: settingsInheritanceProperty },
 					this.checkAndFilterPropertiesRequiringTrust(machineOverridableSettings.properties),
 					this.checkAndFilterPropertiesRequiringTrust(resourceSettings.properties)
 				),
