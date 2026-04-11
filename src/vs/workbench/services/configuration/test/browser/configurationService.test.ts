@@ -1689,7 +1689,7 @@ suite('WorkspaceConfigurationService - Folder', () => {
 		const sourceUserDataProfilesService = disposables.add(new UserDataProfilesService(sourceEnvironmentService, sourceFileService, sourceUriIdentityService, logService));
 		disposables.add(sourceFileService.registerProvider(Schemas.vscodeUserData, disposables.add(new FileUserDataProvider(ROOT.scheme, sourceRootProvider, Schemas.vscodeUserData, sourceUserDataProfilesService, sourceUriIdentityService, new NullLogService()))));
 		const sourceUserDataProfileService = disposables.add(new UserDataProfileService(sourceUserDataProfilesService.defaultProfile));
-		const sourceRemoteAgentService = new RemoteAgentService(new RemoteSocketFactoryService(), sourceUserDataProfileService, sourceEnvironmentService, TestProductService, new RemoteAuthorityResolverService(false, undefined, undefined, TestProductService, logService), new SignService(TestProductService), new NullLogService());
+		const sourceRemoteAgentService = new RemoteAgentService(new RemoteSocketFactoryService(), sourceUserDataProfileService, sourceEnvironmentService, TestProductService, new RemoteAuthorityResolverService(false, undefined, undefined, undefined, TestProductService, logService), new SignService(TestProductService), new NullLogService());
 		const sourceWorkspaceService = disposables.add(new WorkspaceService({ configurationCache }, sourceEnvironmentService, sourceUserDataProfileService, sourceUserDataProfilesService, sourceFileService, sourceRemoteAgentService, sourceUriIdentityService, new NullLogService(), new NullPolicyService()));
 
 		await sourceFileService.createFolder(cachedFolder);
@@ -1713,7 +1713,7 @@ suite('WorkspaceConfigurationService - Folder', () => {
 		const cachedUserDataProfilesService = disposables.add(new UserDataProfilesService(cachedEnvironmentService, cachedFileService, cachedUriIdentityService, logService));
 		disposables.add(cachedFileService.registerProvider(Schemas.vscodeUserData, disposables.add(new FileUserDataProvider(ROOT.scheme, cachedRootProvider, Schemas.vscodeUserData, cachedUserDataProfilesService, cachedUriIdentityService, new NullLogService()))));
 		const cachedUserDataProfileService = disposables.add(new UserDataProfileService(cachedUserDataProfilesService.defaultProfile));
-		const cachedRemoteAgentService = new RemoteAgentService(new RemoteSocketFactoryService(), cachedUserDataProfileService, cachedEnvironmentService, TestProductService, new RemoteAuthorityResolverService(false, undefined, undefined, TestProductService, logService), new SignService(TestProductService), new NullLogService());
+		const cachedRemoteAgentService = new RemoteAgentService(new RemoteSocketFactoryService(), cachedUserDataProfileService, cachedEnvironmentService, TestProductService, new RemoteAuthorityResolverService(false, undefined, undefined, undefined, TestProductService, logService), new SignService(TestProductService), new NullLogService());
 		const cachedWorkspaceService = disposables.add(new WorkspaceService({ configurationCache }, cachedEnvironmentService, cachedUserDataProfileService, cachedUserDataProfilesService, cachedFileService, cachedRemoteAgentService, cachedUriIdentityService, new NullLogService(), new NullPolicyService()));
 
 		await cachedWorkspaceService.initialize(convertToWorkspacePayload(cachedFolder));
