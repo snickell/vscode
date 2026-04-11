@@ -1,0 +1,49 @@
+# Notes
+
+- 2026-04-09: Read the spec and traced the concrete seam to `FileServiceBasedConfiguration` and `CachedFolderConfiguration` in `src/vs/workbench/services/configuration/browser/configuration.ts`.
+- 2026-04-09: `FolderConfiguration` already centralizes folder-scoped settings, standalone `tasks.json`, standalone `launch.json`, file watching, and cache updates. This is the right place to keep the patch narrow.
+- 2026-04-09: Schema and editor support are split between `src/vs/workbench/services/configuration/browser/configurationService.ts` and `extensions/configuration-editing`.
+- 2026-04-09: `ConfigurationModelParser` tolerates malformed JSON by producing a partial tree. The spec wants invalid local overlay content to be ignored. The implementation needs an explicit validity check for the local file before merging it.
+- 2026-04-09: Implemented the overlay by adding a second settings resource and parser to folder configuration loading, merging `settings.local.json` after `settings.json` and before standalone folder configs.
+- 2026-04-09: Cache support stores the local overlay payload under `settings.local`, and cache restore uses the same invalid-local suppression as the live file path.
+- 2026-04-09: Editor support was added in `extensions/configuration-editing` via JSONC filename pattern, folder schema association, and settings completions for `settings.local.json`.
+- 2026-04-09: Added browser configuration tests for override, create, delete, invalid-local fallback, restricted-setting trust behavior, cache restore, and multiroot folder overlay behavior.
+- 2026-04-09: Validation: targeted TypeScript compile passed for `extensions/configuration-editing`; targeted ESLint passed for the touched source and extension files. Full `src` project compile is currently blocked by unrelated baseline errors in `src/vs/platform/environment/test/node/argv.test.ts`.
+- 2026-04-09: Critique pass 1 removed an unused exported path constant.
+- 2026-04-09: Critique pass 2 tightened naming and cache payload typing in the folder configuration loader.
+- 2026-04-09: Critique pass 3 kept the current design. A generalized overlay mechanism was judged worse than the small optional-local-resource path for this patch.
+- 2026-04-09: Reloaded `PLAN.md` and `CHECKLIST.md` after reviewer followup was added. The only new requested delta was to narrow editor-side matching for `settings.local.json`.
+- 2026-04-09: Tightened the completion provider selector from `**/settings.local.json` to `**/.vscode/settings.local.json`, and tightened language association metadata from a broad glob to `/.vscode/settings.local.json`.
+- 2026-04-09: Updated the completion test to open `.vscode/settings.local.json`, taught the helper to create parent directories for nested fixtures, and added a negative test that bare `settings.local.json` does not receive settings completions.
+- 2026-04-09: Followup validation passed: focused TypeScript compile for the touched `configuration-editing` files, ESLint for the touched extension files, and `git diff --check`.
+- 2026-04-09: Followup critique pass 1 kept the narrowed matcher and test-helper mkdir change; both are required to express the exact-path behavior without loader churn.
+- 2026-04-09: Followup critique pass 2 concluded the selector/schema path strings now match the supported behavior closely enough for review.
+- 2026-04-09: Followup critique pass 3 added one negative completion test and stopped there. More editor churn would be gratuitous.
+- 2026-04-09: Read `NEW_WORK.md` and rewrote `PLAN.md` before making further edits. Reopened validation and critique phases in `CHECKLIST.md` as directed.
+- 2026-04-09: Updated branch-facing docs to use "Local Workspace settings" as the primary public framing. `SPEC.md` now names the feature that way, and `AGENTS.md` no longer tells a restarted agent to think in "sidecar" terms.
+- 2026-04-09: Added an explicit future-work note in `SPEC.md` pointing saved-workspace followup work at sibling `*.code-workspace.local` files.
+- 2026-04-09: Upstream-alignment validation passed: `git diff --check` was clean, and a naming sweep showed the public branch docs now center "Local Workspace settings" while keeping "sidecar" confined to task-planning notes.
+- 2026-04-09: Upstream-alignment critique pass 1 kept the implementation narrow: no loader or test behavior changed because the new request was framing work, not mechanics.
+- 2026-04-09: Upstream-alignment critique pass 2 judged the doc wording closer to upstream review language and therefore more mergeable.
+- 2026-04-09: Upstream-alignment critique pass 3 stopped after `SPEC.md` and `AGENTS.md`. Further churn in code or tests would not improve the branch.
+- 2026-04-09: Per followup request, renamed the remaining code-facing test labels that still used raw `settings.local.json` or "workspace local settings" phrasing. The goal was wording consistency, not behavior change.
+- 2026-04-09: Lightweight validation after the test-label rename was clean apart from the pre-existing `local/code-import-patterns` warning on `configurationService.test.ts`. `git diff --check` stayed clean.
+- 2026-04-11: Re-read `SPEC.md`, diffed the branch against `origin/main`, and re-evaluated the live implementation against the current upstream tree. The loader seam is still `FileServiceBasedConfiguration`, the cache seam is still `CachedFolderConfiguration`, and `extensions/configuration-editing` is still the correct editor/schema seam.
+- 2026-04-11: The current two-settings-resource shape still fits current upstream cleanly. No newer upstream primitive displaced it, so this iteration kept the implementation rather than rewriting it.
+- 2026-04-11: Added an explicit regression test for deleting the parent `.vscode` folder. The branch already watched parent directories, but the older coverage only proved create/delete on `settings.local.json` itself.
+- 2026-04-11: Validation in this iteration is environment-limited in this worktree: `node_modules` is absent, `node build/eslint` fails on missing dev dependencies such as `event-stream`, and the browser runner is therefore not locally runnable here. `git diff --check` is clean.
+- 2026-04-11: Critique pass 1 kept the current loader/cache/editor split. On the current tree it remains the smallest coherent shape.
+- 2026-04-11: Critique pass 2 kept the new test inline with nearby configuration-service tests. Extracting helpers or renaming existing implementation pieces would add branch-local style without improving clarity.
+- 2026-04-11: Critique pass 3 stopped after the parent-folder delete regression test. Adding more machinery would be less minimal than the current patch.
+- 2026-04-11: `NEW_WORK.md` required an actual base move, not just awareness. Rebased `seth/local-workspace-settings-folder` onto current `origin/main`. The new merge-base equals `origin/main`.
+- 2026-04-11: Reviewed `git diff 1eabca550153e1502de582d1d6aa44ecc636f1c8..origin/main -- <touched paths>` before resolving the rebase conflicts. The meaningful upstream changes were: relative ESM imports in browser workbench code, `ILogService`-requiring configuration model/parser constructors, `UserConfiguration` now carrying parse options plus `mcp.json`, `FolderConfiguration` now already wiring `mcp.json`, and newer configuration-editing/test infrastructure.
+- 2026-04-11: The old patch shape was not kept byte-for-byte. The code-facing keep/rewrite decision on the new base was: keep the folder loader seam, but rewrite the patch to preserve current upstream `mcp.json` handling, current parser signatures, and current test wiring.
+- 2026-04-11: On the rebased tree, `FileServiceBasedConfiguration` now takes an optional local settings resource while preserving current upstream standalone resources. The local file is resolved separately so absence can be distinguished without changing the existing shared-settings read path semantics for the rest of the loader.
+- 2026-04-11: On the rebased tree, `CachedFolderConfiguration` now stores and restores `settings.local`, unions restricted settings from shared and local parsers, and uses the same invalid-local suppression as the live read path.
+- 2026-04-11: On the rebased tree, `extensions/configuration-editing/package.json` was ported to the current contribution format by adding only the narrow `/.vscode/settings.local.json` filename pattern and folder schema association, rather than restoring older removed metadata wholesale.
+- 2026-04-11: On the rebased tree, the browser configuration tests were ported onto the newer suite layout and disposal conventions. Coverage now again includes local override, create, delete, parent-folder delete, invalid-local fallback, trust, cache restore, and multiroot folder behavior.
+- 2026-04-11: Validation after the actual rebase remains environment-limited in this worktree for the same reason as before: `node_modules` is absent, so repo-local ESLint and browser test execution are not available. `git diff --check` is still clean on the rebased tree.
+- 2026-04-11: Rebased critique pass 1 kept the local settings feature in the folder loader/cache seam and rejected any broader overlay abstraction.
+- 2026-04-11: Rebased critique pass 2 kept the port aligned with current upstream naming, imports, and test style rather than preserving the older branch's exact structure.
+- 2026-04-11: Rebased critique pass 3 kept the explicit parent `.vscode` deletion regression test and stopped there. More churn on the rebased tree would not improve the patch.
+- 2026-04-11: `NEW_WORK.md` was updated again after the rebase port. The new delta was operational rather than architectural: add checklist items for commit, push, CI wait, and CI repair, then carry the rebased branch through those steps instead of stopping at a local tree.
