@@ -1857,7 +1857,7 @@ suite('WorkspaceConfigurationService - Folder', () => {
 suite('WorkspaceConfigurationService - Folder Cache', () => {
 
 	let testObject: WorkspaceService, fileService: IFileService, configurationCache: ConfigurationCache;
-	const disposables = new DisposableStore();
+	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 
 	setup(async () => {
 		const logService = new NullLogService();
@@ -1870,12 +1870,12 @@ suite('WorkspaceConfigurationService - Folder Cache', () => {
 
 		const instantiationService = <TestInstantiationService>workbenchInstantiationService(undefined, disposables);
 		const environmentService = TestEnvironmentService;
+		const uriIdentityService = new UriIdentityService(fileService);
 		const remoteAgentService = instantiationService.createInstance(RemoteAgentService);
 		instantiationService.stub(IRemoteAgentService, remoteAgentService);
-		fileService.registerProvider(Schemas.vscodeUserData, disposables.add(new FileUserDataProvider(ROOT.scheme, fileSystemProvider, Schemas.vscodeUserData, new NullLogService())));
-		const uriIdentityService = new UriIdentityService(fileService);
 		const userDataProfilesService = instantiationService.stub(IUserDataProfilesService, new UserDataProfilesService(environmentService, fileService, uriIdentityService, logService));
-		const userDataProfileService = instantiationService.stub(IUserDataProfileService, new UserDataProfileService(userDataProfilesService.defaultProfile, userDataProfilesService));
+		fileService.registerProvider(Schemas.vscodeUserData, disposables.add(new FileUserDataProvider(ROOT.scheme, fileSystemProvider, Schemas.vscodeUserData, userDataProfilesService, uriIdentityService, new NullLogService())));
+		const userDataProfileService = instantiationService.stub(IUserDataProfileService, new UserDataProfileService(userDataProfilesService.defaultProfile));
 		configurationCache = new ConfigurationCache(() => true);
 		testObject = disposables.add(new WorkspaceService({ configurationCache }, environmentService, userDataProfileService, userDataProfilesService, fileService, remoteAgentService, uriIdentityService, new NullLogService(), new NullPolicyService()));
 		await testObject.initialize(convertToWorkspacePayload(folder));

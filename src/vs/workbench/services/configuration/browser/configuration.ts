@@ -259,22 +259,22 @@ function hasParseErrors(content: string): boolean {
 	return parseErrors.length > 0;
 }
 
-function createSettingsConfigurationParser(name: string, content: string, configurationParseOptions: ConfigurationParseOptions, ignoreParseErrors: boolean = false): ConfigurationModelParser | null {
+function createSettingsConfigurationParser(name: string, content: string, configurationParseOptions: ConfigurationParseOptions, logService: ILogService, ignoreParseErrors: boolean = false): ConfigurationModelParser | null {
 	if (ignoreParseErrors && hasParseErrors(content)) {
 		return null;
 	}
 
-	const parser = new ConfigurationModelParser(name);
+	const parser = new ConfigurationModelParser(name, logService);
 	parser.parse(content, configurationParseOptions);
 	return parser;
 }
 
-function createStandaloneConfigurationParser(name: string, scope: string, content: string, ignoreParseErrors: boolean = false): StandaloneConfigurationModelParser | null {
+function createStandaloneConfigurationParser(name: string, scope: string, content: string, logService: ILogService, ignoreParseErrors: boolean = false): StandaloneConfigurationModelParser | null {
 	if (ignoreParseErrors && hasParseErrors(content)) {
 		return null;
 	}
 
-	const parser = new StandaloneConfigurationModelParser(name, scope);
+	const parser = new StandaloneConfigurationModelParser(name, scope, logService);
 	parser.parse(content);
 	return parser;
 }
@@ -356,7 +356,7 @@ class FileServiceBasedConfiguration extends Disposable {
 		for (let index = 0; index < settingsContents.length; index++) {
 			const content = settingsContents[index][1];
 			if (content !== undefined) {
-				const parser = createSettingsConfigurationParser(this.settingsResources[index].resource.toString(), content, this._folderSettingsParseOptions, this.settingsResources[index].ignoreParseErrors);
+				const parser = createSettingsConfigurationParser(this.settingsResources[index].resource.toString(), content, this._folderSettingsParseOptions, this.logService, this.settingsResources[index].ignoreParseErrors);
 				if (parser) {
 					this._folderSettingsModelParsers.push(parser);
 				} else {
@@ -368,7 +368,7 @@ class FileServiceBasedConfiguration extends Disposable {
 			const contents = standAloneConfigurationContents[index][1];
 			const resource = this.standAloneConfigurationResources[index];
 			if (contents !== undefined || resource.defaultToEmpty) {
-				const parser = createStandaloneConfigurationParser(resource.resource.toString(), resource.scope, contents ?? '{}', resource.ignoreParseErrors);
+				const parser = createStandaloneConfigurationParser(resource.resource.toString(), resource.scope, contents ?? '{}', this.logService, resource.ignoreParseErrors);
 				if (parser) {
 					this._standAloneConfigurations.push(parser.configurationModel);
 				} else {
@@ -1025,14 +1025,14 @@ class CachedFolderConfiguration {
 			if (configurationContents) {
 				const sharedSettingsContent = configurationContents[FOLDER_SETTINGS_PATH] ?? configurationContents[FOLDER_SETTINGS_NAME];
 				if (sharedSettingsContent !== undefined) {
-					const parser = createSettingsConfigurationParser(FOLDER_SETTINGS_PATH, sharedSettingsContent, this._folderSettingsParseOptions);
+					const parser = createSettingsConfigurationParser(FOLDER_SETTINGS_PATH, sharedSettingsContent, this._folderSettingsParseOptions, this.logService);
 					if (parser) {
 						this._folderSettingsModelParsers.push(parser);
 					}
 				}
 				const localSettingsContent = configurationContents[LOCAL_FOLDER_SETTINGS_PATH];
 				if (localSettingsContent !== undefined) {
-					const parser = createSettingsConfigurationParser(LOCAL_FOLDER_SETTINGS_PATH, localSettingsContent, this._folderSettingsParseOptions, true);
+					const parser = createSettingsConfigurationParser(LOCAL_FOLDER_SETTINGS_PATH, localSettingsContent, this._folderSettingsParseOptions, this.logService, true);
 					if (parser) {
 						this._folderSettingsModelParsers.push(parser);
 					}
@@ -1040,14 +1040,14 @@ class CachedFolderConfiguration {
 				for (const { scope, sharedKey, localKey } of STANDALONE_FOLDER_CONFIGURATION_RESOURCES) {
 					const sharedContent = configurationContents[sharedKey] ?? configurationContents[scope];
 					if (sharedContent !== undefined) {
-						const parser = createStandaloneConfigurationParser(sharedKey, scope, sharedContent);
+						const parser = createStandaloneConfigurationParser(sharedKey, scope, sharedContent, this.logService);
 						if (parser) {
 							this._standAloneConfigurations.push(parser.configurationModel);
 						}
 					}
 					const localContent = localKey ? configurationContents[localKey] : undefined;
 					if (localContent !== undefined) {
-						const parser = createStandaloneConfigurationParser(localKey!, scope, localContent, true);
+						const parser = createStandaloneConfigurationParser(localKey!, scope, localContent, this.logService, true);
 						if (parser) {
 							this._standAloneConfigurations.push(parser.configurationModel);
 						}
