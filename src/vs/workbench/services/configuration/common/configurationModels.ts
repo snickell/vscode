@@ -145,7 +145,13 @@ export class Configuration extends BaseConfiguration {
 		return super.inspect(key, overrides, this._workspace);
 	}
 
-	override keys(): { default: string[]; policy: string[]; user: string[]; workspace: string[]; workspaceFolder: string[]; } {
+	override keys(): {
+		default: string[];
+		policy: string[];
+		user: string[];
+		workspace: string[];
+		workspaceFolder: string[];
+	} {
 		return super.keys(this._workspace);
 	}
 

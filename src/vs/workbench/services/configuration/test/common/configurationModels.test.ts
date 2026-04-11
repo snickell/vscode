@@ -148,6 +148,8 @@ suite('StandaloneConfigurationModelParser', () => {
 
 suite('Workspace File Configurations', () => {
 
+	ensureNoDisposablesAreLeakedInTestSuite();
+
 	test('canonical descriptor enumerates supported file family', () => {
 		assert.deepStrictEqual(
 			WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key),

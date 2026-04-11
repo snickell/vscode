@@ -6896,6 +6896,10 @@ declare module 'vscode' {
 			 * The workspace-folder-specific value.
 			 */
 			workspaceFolderValue?: T;
+
+			/**
+			 * The local-workspace-folder-specific value.
+			 */
 			workspaceFolderLocalValue?: T;
 
 			/**
@@ -6922,6 +6926,10 @@ declare module 'vscode' {
 			 * Language specific workspace-folder value when this configuration value is created for a {@link ConfigurationScope language scope}.
 			 */
 			workspaceFolderLanguageValue?: T;
+
+			/**
+			 * Language specific local-workspace-folder value when this configuration value is created for a {@link ConfigurationScope language scope}.
+			 */
 			workspaceFolderLocalLanguageValue?: T;
 
 			/**
