@@ -3,10 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ErrorNoTelemetry } from 'vs/base/common/errors';
-import { Event } from 'vs/base/common/event';
-import { URI } from 'vs/base/common/uri';
-import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
+import { ErrorNoTelemetry } from '../../../base/common/errors.js';
+import { Event } from '../../../base/common/event.js';
+import { URI } from '../../../base/common/uri.js';
+import { createDecorator } from '../../instantiation/common/instantiation.js';
 
 export const IRemoteAuthorityResolverService = createDecorator<IRemoteAuthorityResolverService>('remoteAuthorityResolverService');
 
@@ -73,6 +73,7 @@ export interface TunnelInformation {
 		elevation: boolean;
 		public?: boolean;
 		privacyOptions: TunnelPrivacy[];
+		protocol: boolean;
 	};
 }
 
@@ -91,7 +92,8 @@ export enum RemoteAuthorityResolverErrorCode {
 	Unknown = 'Unknown',
 	NotAvailable = 'NotAvailable',
 	TemporarilyNotAvailable = 'TemporarilyNotAvailable',
-	NoResolverFound = 'NoResolverFound'
+	NoResolverFound = 'NoResolverFound',
+	InvalidAuthority = 'InvalidAuthority'
 }
 
 export class RemoteAuthorityResolverError extends ErrorNoTelemetry {
@@ -108,17 +110,21 @@ export class RemoteAuthorityResolverError extends ErrorNoTelemetry {
 		return (err instanceof RemoteAuthorityResolverError) && err._code === RemoteAuthorityResolverErrorCode.NoResolverFound;
 	}
 
+	public static isInvalidAuthority(err: any): boolean {
+		return (err instanceof RemoteAuthorityResolverError) && err._code === RemoteAuthorityResolverErrorCode.InvalidAuthority;
+	}
+
 	public static isHandled(err: any): boolean {
 		return (err instanceof RemoteAuthorityResolverError) && err.isHandled;
 	}
 
 	public readonly _message: string | undefined;
 	public readonly _code: RemoteAuthorityResolverErrorCode;
-	public readonly _detail: any;
+	public readonly _detail: unknown;
 
 	public isHandled: boolean;
 
-	constructor(message?: string, code: RemoteAuthorityResolverErrorCode = RemoteAuthorityResolverErrorCode.Unknown, detail?: any) {
+	constructor(message?: string, code: RemoteAuthorityResolverErrorCode = RemoteAuthorityResolverErrorCode.Unknown, detail?: unknown) {
 		super(message);
 
 		this._message = message;

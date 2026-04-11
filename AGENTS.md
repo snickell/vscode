@@ -2,6 +2,8 @@
 
 Reload this file on restart. Reload `SPEC.md`, `PLAN.md`, `CHECKLIST.md`, and `NOTES.md` when compacting context or resuming after interruption.
 
+For general project guidance beyond this task state, see [.github/copilot-instructions.md](.github/copilot-instructions.md).
+
 ## Task
 
 Implement the canonical descriptor-first refactor for first-class Local Workspace state across the supported workspace file family from `SPEC.md`.

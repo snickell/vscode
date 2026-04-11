@@ -3,8 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IEncryptionService } from 'vs/platform/encryption/common/encryptionService';
-import { InstantiationType, registerSingleton } from 'vs/platform/instantiation/common/extensions';
+import { IEncryptionService, KnownStorageProvider } from '../../../../platform/encryption/common/encryptionService.js';
+import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 
 export class EncryptionService implements IEncryptionService {
 
@@ -20,6 +20,14 @@ export class EncryptionService implements IEncryptionService {
 
 	isEncryptionAvailable(): Promise<boolean> {
 		return Promise.resolve(false);
+	}
+
+	getKeyStorageProvider(): Promise<KnownStorageProvider> {
+		return Promise.resolve(KnownStorageProvider.basicText);
+	}
+
+	setUsePlainTextEncryption(): Promise<void> {
+		return Promise.resolve(undefined);
 	}
 }
 

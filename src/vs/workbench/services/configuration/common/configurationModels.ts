@@ -3,29 +3,36 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { equals } from 'vs/base/common/objects';
-import { toValuesTree, IConfigurationModel, IConfigurationOverrides, IConfigurationValue, IConfigurationChange } from 'vs/platform/configuration/common/configuration';
-import { Configuration as BaseConfiguration, ConfigurationModelParser, ConfigurationModel, ConfigurationParseOptions } from 'vs/platform/configuration/common/configurationModels';
-import { IStoredWorkspaceFolder } from 'vs/platform/workspaces/common/workspaces';
-import { Workspace } from 'vs/platform/workspace/common/workspace';
-import { ResourceMap } from 'vs/base/common/map';
-import { URI } from 'vs/base/common/uri';
-import { isBoolean } from 'vs/base/common/types';
-import { distinct } from 'vs/base/common/arrays';
-import { EXTENSIONS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, TASKS_CONFIGURATION_KEY, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS } from 'vs/workbench/services/configuration/common/workspaceFileConfiguration';
+import { distinct } from '../../../../base/common/arrays.js';
+import { IStringDictionary } from '../../../../base/common/collections.js';
+import { ResourceMap } from '../../../../base/common/map.js';
+import { equals } from '../../../../base/common/objects.js';
+import { URI } from '../../../../base/common/uri.js';
+import { isBoolean } from '../../../../base/common/types.js';
+import { toValuesTree, IConfigurationChange, IConfigurationModel, IConfigurationOverrides, IConfigurationValue } from '../../../../platform/configuration/common/configuration.js';
+import { Configuration as BaseConfiguration, ConfigurationModel, ConfigurationModelParser, ConfigurationParseOptions } from '../../../../platform/configuration/common/configurationModels.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
+import { Workspace } from '../../../../platform/workspace/common/workspace.js';
+import { IStoredWorkspaceFolder } from '../../../../platform/workspaces/common/workspaces.js';
+import { EXTENSIONS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, TASKS_CONFIGURATION_KEY } from './configuration.js';
+import { type IWorkspaceFileConfigurationDescriptor, WORKSPACE_FILE_SECTION_DESCRIPTORS } from './workspaceFileConfiguration.js';
 
 export class WorkspaceConfigurationModelParser extends ConfigurationModelParser {
 
 	private _folders: IStoredWorkspaceFolder[] = [];
-	private _transient: boolean = false;
-	private _settingsModelParser: ConfigurationModelParser;
-	private _standaloneModels = new Map<string, ConfigurationModel>();
+	private _transient = false;
+	private readonly _settingsModelParser: ConfigurationModelParser;
+	private readonly _standaloneModels = new Map<string, ConfigurationModel>();
 
-	constructor(name: string) {
-		super(name);
-		this._settingsModelParser = new ConfigurationModelParser(name);
-		for (const descriptor of WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS) {
-			this._standaloneModels.set(descriptor.key, new ConfigurationModel());
+	constructor(
+		name: string,
+		logService: ILogService,
+		private readonly standaloneConfigurationDescriptors: readonly IWorkspaceFileConfigurationDescriptor[] = WORKSPACE_FILE_SECTION_DESCRIPTORS.filter(descriptor => descriptor.key !== 'settings')
+	) {
+		super(name, logService);
+		this._settingsModelParser = new ConfigurationModelParser(name, logService);
+		for (const descriptor of this.standaloneConfigurationDescriptors) {
+			this._standaloneModels.set(descriptor.key, ConfigurationModel.createEmptyModel(logService));
 		}
 	}
 
@@ -54,7 +61,7 @@ export class WorkspaceConfigurationModelParser extends ConfigurationModelParser 
 	}
 
 	get standaloneConfigurationModels(): ConfigurationModel[] {
-		return WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.map(descriptor => this.getStandaloneModel(descriptor.key));
+		return this.standaloneConfigurationDescriptors.map(descriptor => this.getStandaloneModel(descriptor.key));
 	}
 
 	reparseWorkspaceSettings(configurationParseOptions: ConfigurationParseOptions): void {
@@ -65,47 +72,46 @@ export class WorkspaceConfigurationModelParser extends ConfigurationModelParser 
 		return this._settingsModelParser.restrictedConfigurations;
 	}
 
-	protected override doParseRaw(raw: any, configurationParseOptions?: ConfigurationParseOptions): IConfigurationModel {
-		this._folders = (raw['folders'] || []) as IStoredWorkspaceFolder[];
-		this._transient = isBoolean(raw['transient']) && raw['transient'];
-		this._settingsModelParser.parseRaw(raw['settings'], configurationParseOptions);
-		for (const descriptor of WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS) {
-			this._standaloneModels.set(descriptor.key, this.createConfigurationModelFrom(raw, descriptor.key));
+	protected override doParseRaw(raw: IStringDictionary<unknown>, configurationParseOptions?: ConfigurationParseOptions): IConfigurationModel {
+		this._folders = (raw.folders || []) as IStoredWorkspaceFolder[];
+		this._transient = isBoolean(raw.transient) && raw.transient;
+		this._settingsModelParser.parseRaw(raw.settings as IStringDictionary<unknown>, configurationParseOptions);
+		for (const descriptor of this.standaloneConfigurationDescriptors) {
+			this._standaloneModels.set(descriptor.key, this.createConfigurationModelFrom(raw, descriptor.workspaceSection ?? descriptor.key));
 		}
 		return super.doParseRaw(raw, configurationParseOptions);
 	}
 
 	private getStandaloneModel(key: string): ConfigurationModel {
-		return this._standaloneModels.get(key) ?? new ConfigurationModel();
+		return this._standaloneModels.get(key) ?? ConfigurationModel.createEmptyModel(this.logService);
 	}
 
-	private createConfigurationModelFrom(raw: any, key: string): ConfigurationModel {
-		const data = raw[key];
+	private createConfigurationModelFrom(raw: IStringDictionary<unknown>, key: string): ConfigurationModel {
+		const data = raw[key] as IStringDictionary<unknown> | undefined;
 		if (data) {
 			const contents = toValuesTree(data, message => console.error(`Conflict in settings file ${this._name}: ${message}`));
 			const scopedContents = Object.create(null);
 			scopedContents[key] = contents;
-			const keys = Object.keys(data).map(k => `${key}.${k}`);
-			return new ConfigurationModel(scopedContents, keys, []);
+			const keys = Object.keys(data).map(dataKey => `${key}.${dataKey}`);
+			return new ConfigurationModel(scopedContents, keys, [], undefined, this.logService);
 		}
-		return new ConfigurationModel();
+		return ConfigurationModel.createEmptyModel(this.logService);
 	}
 }
 
 export class StandaloneConfigurationModelParser extends ConfigurationModelParser {
 
-	constructor(name: string, private readonly scope: string) {
-		super(name);
+	constructor(name: string, private readonly scope: string, logService: ILogService) {
+		super(name, logService);
 	}
 
-	protected override doParseRaw(raw: any, configurationParseOptions?: ConfigurationParseOptions): IConfigurationModel {
+	protected override doParseRaw(raw: IStringDictionary<unknown>): IConfigurationModel {
 		const contents = toValuesTree(raw, message => console.error(`Conflict in settings file ${this._name}: ${message}`));
 		const scopedContents = Object.create(null);
 		scopedContents[this.scope] = contents;
 		const keys = Object.keys(raw).map(key => `${this.scope}.${key}`);
 		return { contents: scopedContents, keys, overrides: [] };
 	}
-
 }
 
 export class Configuration extends BaseConfiguration {
@@ -120,13 +126,15 @@ export class Configuration extends BaseConfiguration {
 		folders: ResourceMap<ConfigurationModel>,
 		memoryConfiguration: ConfigurationModel,
 		memoryConfigurationByResource: ResourceMap<ConfigurationModel>,
-		private readonly _workspace?: Workspace,
-		workspaceLocalConfiguration: ConfigurationModel = new ConfigurationModel(),
-		folderLocalConfigurations: ResourceMap<ConfigurationModel> = new ResourceMap<ConfigurationModel>()) {
-		super(defaults, policy, application, localUser, remoteUser, workspaceConfiguration, folders, memoryConfiguration, memoryConfigurationByResource, workspaceLocalConfiguration, folderLocalConfigurations);
+		private readonly _workspace: Workspace | undefined,
+		workspaceLocalConfiguration: ConfigurationModel,
+		folderLocalConfigurations: ResourceMap<ConfigurationModel>,
+		logService: ILogService
+	) {
+		super(defaults, policy, application, localUser, remoteUser, workspaceConfiguration, folders, memoryConfiguration, memoryConfigurationByResource, workspaceLocalConfiguration, folderLocalConfigurations, logService);
 	}
 
-	override getValue(key: string | undefined, overrides: IConfigurationOverrides = {}): any {
+	override getValue(key: string | undefined, overrides: IConfigurationOverrides = {}): unknown {
 		return super.getValue(key, overrides, this._workspace);
 	}
 
@@ -134,26 +142,19 @@ export class Configuration extends BaseConfiguration {
 		return super.inspect(key, overrides, this._workspace);
 	}
 
-	override keys(): {
-		default: string[];
-		user: string[];
-		workspace: string[];
-		workspaceFolder: string[];
-	} {
+	override keys(): { default: string[]; policy: string[]; user: string[]; workspace: string[]; workspaceFolder: string[]; } {
 		return super.keys(this._workspace);
 	}
 
 	override compareAndDeleteFolderConfiguration(folder: URI): IConfigurationChange {
-		if (this._workspace && this._workspace.folders.length > 0 && this._workspace.folders[0].uri.toString() === folder.toString()) {
-			// Do not remove workspace configuration
+		if (this._workspace?.folders.length && this._workspace.folders[0].uri.toString() === folder.toString()) {
 			return { keys: [], overrides: [] };
 		}
 		return super.compareAndDeleteFolderConfiguration(folder);
 	}
 
 	override compareAndDeleteFolderLocalConfiguration(folder: URI): IConfigurationChange {
-		if (this._workspace && this._workspace.folders.length > 0 && this._workspace.folders[0].uri.toString() === folder.toString()) {
-			// Do not remove workspace local configuration
+		if (this._workspace?.folders.length && this._workspace.folders[0].uri.toString() === folder.toString()) {
 			return { keys: [], overrides: [] };
 		}
 		return super.compareAndDeleteFolderLocalConfiguration(folder);
@@ -165,16 +166,13 @@ export class Configuration extends BaseConfiguration {
 			keys.push(...toKeys.filter(key => fromKeys.indexOf(key) === -1));
 			keys.push(...fromKeys.filter(key => toKeys.indexOf(key) === -1));
 			keys.push(...fromKeys.filter(key => {
-				// Ignore if the key does not exist in both models
 				if (toKeys.indexOf(key) === -1) {
 					return false;
 				}
-				// Compare workspace value
 				if (!equals(this.getValue(key, { overrideIdentifier }), other.getValue(key, { overrideIdentifier }))) {
 					return true;
 				}
-				// Compare workspace folder value
-				return this._workspace && this._workspace.folders.some(folder => !equals(this.getValue(key, { resource: folder.uri, overrideIdentifier }), other.getValue(key, { resource: folder.uri, overrideIdentifier })));
+				return this._workspace ? this._workspace.folders.some(folder => !equals(this.getValue(key, { resource: folder.uri, overrideIdentifier }), other.getValue(key, { resource: folder.uri, overrideIdentifier }))) : false;
 			}));
 			return keys;
 		};
@@ -182,12 +180,11 @@ export class Configuration extends BaseConfiguration {
 		const overrides: [string, string[]][] = [];
 		const allOverrideIdentifiers = distinct([...this.allOverrideIdentifiers(), ...other.allOverrideIdentifiers()]);
 		for (const overrideIdentifier of allOverrideIdentifiers) {
-			const keys = compare(this.getAllKeysForOverrideIdentifier(overrideIdentifier), other.getAllKeysForOverrideIdentifier(overrideIdentifier), overrideIdentifier);
-			if (keys.length) {
-				overrides.push([overrideIdentifier, keys]);
+			const overrideKeys = compare(this.getAllKeysForOverrideIdentifier(overrideIdentifier), other.getAllKeysForOverrideIdentifier(overrideIdentifier), overrideIdentifier);
+			if (overrideKeys.length) {
+				overrides.push([overrideIdentifier, overrideKeys]);
 			}
 		}
 		return { keys, overrides };
 	}
-
 }

@@ -3,8 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IProcessEnvironment, isWindows } from 'vs/base/common/platform';
-import { EnvironmentVariableMutatorType, EnvironmentVariableScope, IEnvironmentVariableCollection, IExtensionOwnedEnvironmentDescriptionMutator, IExtensionOwnedEnvironmentVariableMutator, IMergedEnvironmentVariableCollection, IMergedEnvironmentVariableCollectionDiff } from 'vs/platform/terminal/common/environmentVariable';
+import { IProcessEnvironment, isWindows } from '../../../base/common/platform.js';
+import { EnvironmentVariableMutatorType, EnvironmentVariableScope, IEnvironmentVariableCollection, IExtensionOwnedEnvironmentDescriptionMutator, IExtensionOwnedEnvironmentVariableMutator, IMergedEnvironmentVariableCollection, IMergedEnvironmentVariableCollectionDiff } from './environmentVariable.js';
 
 type VariableResolver = (str: string) => Promise<string>;
 
@@ -13,6 +13,8 @@ const mutatorTypeToLabelMap: Map<EnvironmentVariableMutatorType, string> = new M
 	[EnvironmentVariableMutatorType.Prepend, 'PREPEND'],
 	[EnvironmentVariableMutatorType.Replace, 'REPLACE']
 ]);
+const PYTHON_ACTIVATION_VARS_PATTERN = /^VSCODE_PYTHON_(PWSH|ZSH|BASH|FISH)_ACTIVATE/;
+const PYTHON_ENV_EXTENSION_ID = 'ms-python.vscode-python-envs';
 
 export class MergedEnvironmentVariableCollection implements IMergedEnvironmentVariableCollection {
 	private readonly map: Map<string, IExtensionOwnedEnvironmentVariableMutator[]> = new Map();
@@ -28,6 +30,12 @@ export class MergedEnvironmentVariableCollection implements IMergedEnvironmentVa
 			while (!next.done) {
 				const mutator = next.value[1];
 				const key = next.value[0];
+
+				if (this.blockPythonActivationVar(key, extensionIdentifier)) {
+					next = it.next();
+					continue;
+				}
+
 				let entry = this.map.get(key);
 				if (!entry) {
 					entry = [];
@@ -70,6 +78,11 @@ export class MergedEnvironmentVariableCollection implements IMergedEnvironmentVa
 			const actualVariable = isWindows ? lowerToActualVariableNames![variable.toLowerCase()] || variable : variable;
 			for (const mutator of mutators) {
 				const value = variableResolver ? await variableResolver(mutator.value) : mutator.value;
+
+				if (this.blockPythonActivationVar(mutator.variable, mutator.extensionIdentifier)) {
+					continue;
+				}
+
 				// Default: true
 				if (mutator.options?.applyAtProcessCreation ?? true) {
 					switch (mutator.type) {
@@ -95,6 +108,14 @@ export class MergedEnvironmentVariableCollection implements IMergedEnvironmentVa
 
 	private _encodeColons(value: string): string {
 		return value.replaceAll(':', '\\x3a');
+	}
+
+	private blockPythonActivationVar(variable: string, extensionIdentifier: string): boolean {
+		// Only Python env extension can modify Python activate env var.
+		if (PYTHON_ACTIVATION_VARS_PATTERN.test(variable) && PYTHON_ENV_EXTENSION_ID !== extensionIdentifier) {
+			return true;
+		}
+		return false;
 	}
 
 	diff(other: IMergedEnvironmentVariableCollection, scope: EnvironmentVariableScope | undefined): IMergedEnvironmentVariableCollectionDiff | undefined {
@@ -138,25 +159,24 @@ export class MergedEnvironmentVariableCollection implements IMergedEnvironmentVa
 
 	getVariableMap(scope: EnvironmentVariableScope | undefined): Map<string, IExtensionOwnedEnvironmentVariableMutator[]> {
 		const result = new Map<string, IExtensionOwnedEnvironmentVariableMutator[]>();
-		this.map.forEach((mutators, _key) => {
+		for (const mutators of this.map.values()) {
 			const filteredMutators = mutators.filter(m => filterScope(m, scope));
 			if (filteredMutators.length > 0) {
 				// All of these mutators are for the same variable because they are in the same scope, hence choose anyone to form a key.
 				result.set(filteredMutators[0].variable, filteredMutators);
 			}
-		});
+		}
 		return result;
 	}
 
 	getDescriptionMap(scope: EnvironmentVariableScope | undefined): Map<string, string | undefined> {
 		const result = new Map<string, string | undefined>();
-		this.descriptionMap.forEach((mutators, _key) => {
+		for (const mutators of this.descriptionMap.values()) {
 			const filteredMutators = mutators.filter(m => filterScope(m, scope, true));
-			if (filteredMutators.length > 0) {
-				// There should be exactly one description per extension per scope.
-				result.set(filteredMutators[0].extensionIdentifier, filteredMutators[0].description);
+			for (const mutator of filteredMutators) {
+				result.set(mutator.extensionIdentifier, mutator.description);
 			}
-		});
+		}
 		return result;
 	}
 

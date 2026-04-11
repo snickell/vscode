@@ -3,16 +3,18 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as assert from 'assert';
-import { DisposableStore } from 'vs/base/common/lifecycle';
-import { Schemas } from 'vs/base/common/network';
-import { URI } from 'vs/base/common/uri';
-import { EditorPart } from 'vs/workbench/browser/parts/editor/editorPart';
-import { DiffEditorInput } from 'vs/workbench/common/editor/diffEditorInput';
-import { EditorResolverService } from 'vs/workbench/services/editor/browser/editorResolverService';
-import { IEditorGroupsService } from 'vs/workbench/services/editor/common/editorGroupsService';
-import { IEditorResolverService, ResolvedStatus, RegisteredEditorPriority } from 'vs/workbench/services/editor/common/editorResolverService';
-import { createEditorPart, ITestInstantiationService, TestFileEditorInput, TestServiceAccessor, workbenchInstantiationService } from 'vs/workbench/test/browser/workbenchTestServices';
+import assert from 'assert';
+import { DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { Schemas } from '../../../../../base/common/network.js';
+import { URI } from '../../../../../base/common/uri.js';
+import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
+import { EditorPart } from '../../../../browser/parts/editor/editorPart.js';
+import { DiffEditorInput } from '../../../../common/editor/diffEditorInput.js';
+import { EditorResolverService } from '../../browser/editorResolverService.js';
+import { IEditorGroupsService } from '../../common/editorGroupsService.js';
+import { IEditorResolverService, ResolvedStatus, RegisteredEditorPriority, editorsAssociationsSettingId } from '../../common/editorResolverService.js';
+import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
+import { createEditorPart, ITestInstantiationService, TestFileEditorInput, TestServiceAccessor, workbenchInstantiationService } from '../../../../test/browser/workbenchTestServices.js';
 
 suite('EditorResolverService', () => {
 
@@ -21,14 +23,23 @@ suite('EditorResolverService', () => {
 
 	teardown(() => disposables.clear());
 
+	ensureNoDisposablesAreLeakedInTestSuite();
+
 	async function createEditorResolverService(instantiationService: ITestInstantiationService = workbenchInstantiationService(undefined, disposables)): Promise<[EditorPart, EditorResolverService, TestServiceAccessor]> {
 		const part = await createEditorPart(instantiationService, disposables);
 		instantiationService.stub(IEditorGroupsService, part);
 
 		const editorResolverService = instantiationService.createInstance(EditorResolverService);
 		instantiationService.stub(IEditorResolverService, editorResolverService);
+		disposables.add(editorResolverService);
 
 		return [part, editorResolverService, instantiationService.createInstance(TestServiceAccessor)];
+	}
+
+	function constructDisposableFileEditorInput(uri: URI, typeId: string, store: DisposableStore): TestFileEditorInput {
+		const editor = new TestFileEditorInput(uri, typeId);
+		store.add(editor);
+		return editor;
 	}
 
 	test('Simple Resolve', async () => {
@@ -111,7 +122,7 @@ suite('EditorResolverService', () => {
 			},
 			{},
 			{
-				createEditorInput: ({ resource, options }, group) => ({ editor: new TestFileEditorInput(URI.parse(resource.toString()), TEST_EDITOR_INPUT_ID) }),
+				createEditorInput: ({ resource, options }, group) => ({ editor: constructDisposableFileEditorInput(URI.parse(resource.toString()), TEST_EDITOR_INPUT_ID, disposables) }),
 			}
 		);
 
@@ -124,7 +135,7 @@ suite('EditorResolverService', () => {
 			},
 			{},
 			{
-				createEditorInput: ({ resource, options }, group) => ({ editor: new TestFileEditorInput(URI.parse(resource.toString()), TEST_EDITOR_INPUT_ID) }),
+				createEditorInput: ({ resource, options }, group) => ({ editor: constructDisposableFileEditorInput(URI.parse(resource.toString()), TEST_EDITOR_INPUT_ID, disposables) }),
 			}
 		);
 
@@ -155,14 +166,14 @@ suite('EditorResolverService', () => {
 			},
 			{},
 			{
-				createEditorInput: ({ resource, options }, group) => ({ editor: new TestFileEditorInput(URI.parse(resource.toString()), TEST_EDITOR_INPUT_ID) }),
+				createEditorInput: ({ resource, options }, group) => ({ editor: constructDisposableFileEditorInput(URI.parse(resource.toString()), TEST_EDITOR_INPUT_ID, disposables) }),
 				createDiffEditorInput: ({ modified, original, options }, group) => ({
 					editor: accessor.instantiationService.createInstance(
 						DiffEditorInput,
 						'name',
 						'description',
-						new TestFileEditorInput(URI.parse(original.toString()), TEST_EDITOR_INPUT_ID),
-						new TestFileEditorInput(URI.parse(modified.toString()), TEST_EDITOR_INPUT_ID),
+						constructDisposableFileEditorInput(URI.parse(original.toString()), TEST_EDITOR_INPUT_ID, disposables),
+						constructDisposableFileEditorInput(URI.parse(modified.toString()), TEST_EDITOR_INPUT_ID, disposables),
 						undefined)
 				})
 			}
@@ -197,7 +208,7 @@ suite('EditorResolverService', () => {
 			},
 			{},
 			{
-				createEditorInput: ({ resource, options }, group) => ({ editor: new TestFileEditorInput(URI.parse(resource.toString()), TEST_EDITOR_INPUT_ID) }),
+				createEditorInput: ({ resource, options }, group) => ({ editor: constructDisposableFileEditorInput(URI.parse(resource.toString()), TEST_EDITOR_INPUT_ID, disposables) }),
 				createDiffEditorInput: ({ modified, original, options }, group) => {
 					diffOneCounter++;
 					return {
@@ -205,8 +216,8 @@ suite('EditorResolverService', () => {
 							DiffEditorInput,
 							'name',
 							'description',
-							new TestFileEditorInput(URI.parse(original.toString()), TEST_EDITOR_INPUT_ID),
-							new TestFileEditorInput(URI.parse(modified.toString()), TEST_EDITOR_INPUT_ID),
+							constructDisposableFileEditorInput(URI.parse(original.toString()), TEST_EDITOR_INPUT_ID, disposables),
+							constructDisposableFileEditorInput(URI.parse(modified.toString()), TEST_EDITOR_INPUT_ID, disposables),
 							undefined)
 					};
 				}
@@ -230,8 +241,8 @@ suite('EditorResolverService', () => {
 							DiffEditorInput,
 							'name',
 							'description',
-							new TestFileEditorInput(URI.parse(original.toString()), TEST_EDITOR_INPUT_ID),
-							new TestFileEditorInput(URI.parse(modified.toString()), TEST_EDITOR_INPUT_ID),
+							constructDisposableFileEditorInput(URI.parse(original.toString()), TEST_EDITOR_INPUT_ID, disposables),
+							constructDisposableFileEditorInput(URI.parse(modified.toString()), TEST_EDITOR_INPUT_ID, disposables),
 							undefined)
 					};
 				}
@@ -255,8 +266,8 @@ suite('EditorResolverService', () => {
 							DiffEditorInput,
 							'name',
 							'description',
-							new TestFileEditorInput(URI.parse(original.toString()), TEST_EDITOR_INPUT_ID),
-							new TestFileEditorInput(URI.parse(modified.toString()), TEST_EDITOR_INPUT_ID),
+							constructDisposableFileEditorInput(URI.parse(original.toString()), TEST_EDITOR_INPUT_ID, disposables),
+							constructDisposableFileEditorInput(URI.parse(modified.toString()), TEST_EDITOR_INPUT_ID, disposables),
 							undefined)
 					};
 				}
@@ -353,9 +364,9 @@ suite('EditorResolverService', () => {
 		const [, service] = await createEditorResolverService();
 
 		let eventCounter = 0;
-		service.onDidChangeEditorRegistrations(() => {
+		disposables.add(service.onDidChangeEditorRegistrations(() => {
 			eventCounter++;
-		});
+		}));
 
 		const editors = service.getEditors();
 
@@ -408,8 +419,8 @@ suite('EditorResolverService', () => {
 						DiffEditorInput,
 						'name',
 						'description',
-						new TestFileEditorInput(URI.parse(original.toString()), TEST_EDITOR_INPUT_ID),
-						new TestFileEditorInput(URI.parse(modified.toString()), TEST_EDITOR_INPUT_ID),
+						constructDisposableFileEditorInput(URI.parse(original.toString()), TEST_EDITOR_INPUT_ID, disposables),
+						constructDisposableFileEditorInput(URI.parse(modified.toString()), TEST_EDITOR_INPUT_ID, disposables),
 						undefined)
 				})
 			}
@@ -444,5 +455,70 @@ suite('EditorResolverService', () => {
 		}
 
 		registeredSingleEditor.dispose();
+	});
+
+	test('User-configured editor association resolves on first startup with empty cache #244597', async () => {
+		const CUSTOM_EDITOR_INPUT_ID = 'testCustomEditorInput';
+
+		// Set up a configuration with a user-configured editor association
+		const instantiationService = workbenchInstantiationService({
+			configurationService: () => new TestConfigurationService({
+				[editorsAssociationsSettingId]: {
+					'*.md': 'CUSTOM_MD_EDITOR'
+				}
+			})
+		}, disposables);
+
+		const part = await createEditorPart(instantiationService, disposables);
+		instantiationService.stub(IEditorGroupsService, part);
+
+		const editorResolverService = instantiationService.createInstance(EditorResolverService);
+		disposables.add(editorResolverService);
+
+		// Register both the default text editor and the custom markdown editor with 'option' priority
+		// (matching how markdown preview is registered in package.json)
+		const defaultEditor = editorResolverService.registerEditor('*',
+			{
+				id: 'default',
+				label: 'Default Editor',
+				detail: 'Default',
+				priority: RegisteredEditorPriority.default
+			},
+			{},
+			{
+				createEditorInput: ({ resource }, group) => ({ editor: new TestFileEditorInput(URI.parse(resource.toString()), TEST_EDITOR_INPUT_ID) })
+			}
+		);
+
+		const customEditor = editorResolverService.registerEditor('*.md',
+			{
+				id: 'CUSTOM_MD_EDITOR',
+				label: 'Markdown Preview',
+				detail: 'Markdown Preview Details',
+				priority: RegisteredEditorPriority.option
+			},
+			{},
+			{
+				createEditorInput: ({ resource }, group) => ({ editor: new TestFileEditorInput(URI.parse(resource.toString()), CUSTOM_EDITOR_INPUT_ID) })
+			}
+		);
+
+		// Resolve a .md file - should use the custom editor due to user association
+		const resultingResolution = await editorResolverService.resolveEditor(
+			{ resource: URI.file('test.md') },
+			part.activeGroup
+		);
+		assert.ok(resultingResolution);
+		assert.notStrictEqual(typeof resultingResolution, 'number');
+		if (resultingResolution !== ResolvedStatus.ABORT && resultingResolution !== ResolvedStatus.NONE) {
+			assert.strictEqual(resultingResolution.editor.typeId, CUSTOM_EDITOR_INPUT_ID,
+				'Should resolve to custom editor when user has configured editor association');
+			resultingResolution.editor.dispose();
+		} else {
+			assert.fail('Expected editor to resolve successfully');
+		}
+
+		defaultEditor.dispose();
+		customEditor.dispose();
 	});
 });

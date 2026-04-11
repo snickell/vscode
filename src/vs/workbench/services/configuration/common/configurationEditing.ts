@@ -3,33 +3,34 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as nls from 'vs/nls';
-import { URI } from 'vs/base/common/uri';
-import * as json from 'vs/base/common/json';
-import { setProperty } from 'vs/base/common/jsonEdit';
-import { Queue } from 'vs/base/common/async';
-import { Edit, FormattingOptions } from 'vs/base/common/jsonFormatter';
-import { Registry } from 'vs/platform/registry/common/platform';
-import { IWorkspaceContextService, WorkbenchState } from 'vs/platform/workspace/common/workspace';
-import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
-import { IConfigurationService, IConfigurationUpdateOptions, IConfigurationUpdateOverrides } from 'vs/platform/configuration/common/configuration';
-import { FOLDER_LOCAL_SETTINGS_PATH, FOLDER_SETTINGS_PATH, FOLDER_SCOPES, getWorkspaceLocalConfigPath } from 'vs/workbench/services/configuration/common/configuration';
-import { EXTENSIONS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, TASKS_CONFIGURATION_KEY, TASKS_DEFAULT, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, USER_STANDALONE_CONFIGURATION_DESCRIPTORS, getWorkspaceFileConfigurationDescriptor, type IWorkspaceFileConfigurationDescriptor } from 'vs/workbench/services/configuration/common/workspaceFileConfiguration';
-import { FileOperationError, FileOperationResult, IFileService } from 'vs/platform/files/common/files';
-import { IResolvedTextEditorModel, ITextModelService } from 'vs/editor/common/services/resolverService';
-import { IConfigurationRegistry, Extensions as ConfigurationExtensions, ConfigurationScope, keyFromOverrideIdentifiers, OVERRIDE_PROPERTY_REGEX } from 'vs/platform/configuration/common/configurationRegistry';
-import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
-import { INotificationService, Severity } from 'vs/platform/notification/common/notification';
-import { IOpenSettingsOptions, IPreferencesService } from 'vs/workbench/services/preferences/common/preferences';
-import { withUndefinedAsNull, withNullAsUndefined } from 'vs/base/common/types';
-import { IUriIdentityService } from 'vs/platform/uriIdentity/common/uriIdentity';
-import { ITextModel } from 'vs/editor/common/model';
-import { IReference } from 'vs/base/common/lifecycle';
-import { Range } from 'vs/editor/common/core/range';
-import { EditOperation } from 'vs/editor/common/core/editOperation';
-import { Selection } from 'vs/editor/common/core/selection';
-import { IUserDataProfileService } from 'vs/workbench/services/userDataProfile/common/userDataProfile';
-import { IUserDataProfilesService } from 'vs/platform/userDataProfile/common/userDataProfile';
+import * as nls from '../../../../nls.js';
+import { URI } from '../../../../base/common/uri.js';
+import * as json from '../../../../base/common/json.js';
+import { setProperty } from '../../../../base/common/jsonEdit.js';
+import { Queue } from '../../../../base/common/async.js';
+import { Edit, FormattingOptions } from '../../../../base/common/jsonFormatter.js';
+import { Registry } from '../../../../platform/registry/common/platform.js';
+import { IWorkspaceContextService, WorkbenchState } from '../../../../platform/workspace/common/workspace.js';
+import { ITextFileService } from '../../textfile/common/textfiles.js';
+import { IConfigurationUpdateOptions, IConfigurationUpdateOverrides } from '../../../../platform/configuration/common/configuration.js';
+import { FOLDER_LOCAL_SETTINGS_PATH, FOLDER_SETTINGS_PATH, FOLDER_SCOPES, IWorkbenchConfigurationService, APPLICATION_SCOPES, MCP_CONFIGURATION_KEY, getWorkspaceLocalConfigPath } from './configuration.js';
+import { EXTENSIONS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, TASKS_CONFIGURATION_KEY, TASKS_DEFAULT, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, USER_STANDALONE_CONFIGURATION_DESCRIPTORS, getWorkspaceFileConfigurationDescriptor, type IWorkspaceFileConfigurationDescriptor } from './workspaceFileConfiguration.js';
+import { FileOperationError, FileOperationResult, IFileService } from '../../../../platform/files/common/files.js';
+import { IResolvedTextEditorModel, ITextModelService } from '../../../../editor/common/services/resolverService.js';
+import { IConfigurationRegistry, Extensions as ConfigurationExtensions, ConfigurationScope, keyFromOverrideIdentifiers, OVERRIDE_PROPERTY_REGEX } from '../../../../platform/configuration/common/configurationRegistry.js';
+import { IEditorService } from '../../editor/common/editorService.js';
+import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
+import { IOpenSettingsOptions, IPreferencesService } from '../../preferences/common/preferences.js';
+import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
+import { ITextModel } from '../../../../editor/common/model.js';
+import { IDisposable, IReference } from '../../../../base/common/lifecycle.js';
+import { Range } from '../../../../editor/common/core/range.js';
+import { EditOperation } from '../../../../editor/common/core/editOperation.js';
+import { Selection } from '../../../../editor/common/core/selection.js';
+import { IUserDataProfileService } from '../../userDataProfile/common/userDataProfile.js';
+import { IUserDataProfilesService } from '../../../../platform/userDataProfile/common/userDataProfile.js';
+import { ErrorNoTelemetry } from '../../../../base/common/errors.js';
+import { IFilesConfigurationService } from '../../filesConfiguration/common/filesConfigurationService.js';
 
 export const enum ConfigurationEditingErrorCode {
 
@@ -104,7 +105,7 @@ export const enum ConfigurationEditingErrorCode {
 	ERROR_INTERNAL
 }
 
-export class ConfigurationEditingError extends Error {
+export class ConfigurationEditingError extends ErrorNoTelemetry {
 	constructor(message: string, public code: ConfigurationEditingErrorCode) {
 		super(message);
 	}
@@ -112,7 +113,7 @@ export class ConfigurationEditingError extends Error {
 
 export interface IConfigurationValue {
 	key: string;
-	value: any;
+	value: unknown;
 }
 
 export interface IConfigurationEditingOptions extends IConfigurationUpdateOptions {
@@ -146,7 +147,7 @@ export class ConfigurationEditing {
 
 	constructor(
 		private readonly remoteSettingsResource: URI | null,
-		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IWorkbenchConfigurationService private readonly configurationService: IWorkbenchConfigurationService,
 		@IWorkspaceContextService private readonly contextService: IWorkspaceContextService,
 		@IUserDataProfileService private readonly userDataProfileService: IUserDataProfileService,
 		@IUserDataProfilesService private readonly userDataProfilesService: IUserDataProfilesService,
@@ -157,6 +158,7 @@ export class ConfigurationEditing {
 		@IPreferencesService private readonly preferencesService: IPreferencesService,
 		@IEditorService private readonly editorService: IEditorService,
 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
+		@IFilesConfigurationService private readonly filesConfigurationService: IFilesConfigurationService
 	) {
 		this.queue = new Queue<void>();
 	}
@@ -201,8 +203,20 @@ export class ConfigurationEditing {
 		}
 
 		const edit = this.getEdits(operation, model.getValue(), formattingOptions)[0];
-		if (edit && this.applyEditsToBuffer(edit, model)) {
-			await this.save(model, operation);
+		if (edit) {
+			let disposable: IDisposable | undefined;
+			try {
+				// Optimization: we apply edits to a text model and save it
+				// right after. Use the files config service to signal this
+				// to the workbench to optimise the UI during this operation.
+				// For example, avoids to briefly show dirty indicators.
+				disposable = this.filesConfigurationService.enableAutoSaveAfterShortDelay(model.uri);
+				if (this.applyEditsToBuffer(edit, model)) {
+					await this.save(model, operation);
+				}
+			} finally {
+				disposable?.dispose();
+			}
 		}
 	}
 
@@ -213,7 +227,7 @@ export class ConfigurationEditing {
 			if ((<FileOperationError>error).fileOperationResult === FileOperationResult.FILE_MODIFIED_SINCE) {
 				throw this.toConfigurationEditingError(ConfigurationEditingErrorCode.ERROR_CONFIGURATION_FILE_MODIFIED_SINCE, operation.target, operation);
 			}
-			throw this.toConfigurationEditingError(ConfigurationEditingErrorCode.ERROR_INTERNAL, operation.target, operation);
+			throw new ConfigurationEditingError(nls.localize('fsError', "Error while writing to {0}. {1}", this.stringifyTarget(operation.target), error.message), ConfigurationEditingErrorCode.ERROR_INTERNAL);
 		}
 	}
 
@@ -292,7 +306,7 @@ export class ConfigurationEditing {
 					label: nls.localize('saveAndRetry', "Save and Retry"),
 					run: () => {
 						const key = operation.key ? `${operation.workspaceStandAloneConfigurationKey}.${operation.key}` : operation.workspaceStandAloneConfigurationKey!;
-						this.writeConfiguration(operation.target, { key, value: operation.value }, <IConfigurationEditingOptions>{ handleDirtyFile: 'save', scopes });
+						this.writeConfiguration(operation.target, { key, value: operation.value }, { handleDirtyFile: 'save', scopes });
 					}
 				},
 				{
@@ -304,7 +318,7 @@ export class ConfigurationEditing {
 			this.notificationService.prompt(Severity.Error, error.message,
 				[{
 					label: nls.localize('saveAndRetry', "Save and Retry"),
-					run: () => this.writeConfiguration(operation.target, { key: operation.key, value: operation.value }, <IConfigurationEditingOptions>{ handleDirtyFile: 'save', scopes })
+					run: () => this.writeConfiguration(operation.target, { key: operation.key, value: operation.value }, { handleDirtyFile: 'save', scopes })
 				},
 				{
 					label: nls.localize('open', "Open Settings"),
@@ -378,6 +392,9 @@ export class ConfigurationEditing {
 				if (standaloneConfigurationLabels) {
 					return nls.localize('errorInvalidStandaloneConfiguration', "Unable to write into the {0} configuration file. Please open it to correct errors/warnings in it and try again.", standaloneConfigurationLabels.file);
 				}
+				if (operation.workspaceStandAloneConfigurationKey === MCP_CONFIGURATION_KEY) {
+					return nls.localize('errorInvalidMCPConfiguration', "Unable to write into the MCP configuration file. Please open it to correct errors/warnings in it and try again.");
+				}
 				switch (target) {
 					case EditableConfigurationTarget.USER_LOCAL:
 						return nls.localize('errorInvalidConfiguration', "Unable to write into user settings. Please open the user settings to correct errors/warnings in it and try again.");
@@ -415,6 +432,9 @@ export class ConfigurationEditing {
 				if (standaloneConfigurationLabels) {
 					return nls.localize('errorStandaloneConfigurationFileDirty', "Unable to write into the {0} configuration file because the file has unsaved changes. Please save it first and then try again.", standaloneConfigurationLabels.file);
 				}
+				if (operation.workspaceStandAloneConfigurationKey === MCP_CONFIGURATION_KEY) {
+					return nls.localize('errorMCPConfigurationFileDirty', "Unable to write into MCP configuration file because the file has unsaved changes. Please save it first and then try again.");
+				}
 				switch (target) {
 					case EditableConfigurationTarget.USER_LOCAL:
 						return nls.localize('errorConfigurationFileDirty', "Unable to write into user settings because the file has unsaved changes. Please save the user settings file first and then try again.");
@@ -451,6 +471,9 @@ export class ConfigurationEditing {
 			case ConfigurationEditingErrorCode.ERROR_CONFIGURATION_FILE_MODIFIED_SINCE:
 				if (standaloneConfigurationLabels) {
 					return nls.localize('errorStandaloneConfigurationFileModifiedSince', "Unable to write into the {0} configuration file because the content of the file is newer.", standaloneConfigurationLabels.file);
+				}
+				if (operation.workspaceStandAloneConfigurationKey === MCP_CONFIGURATION_KEY) {
+					return nls.localize('errorMCPConfigurationFileModifiedSince', "Unable to write into MCP configuration file because the content of the file is newer.");
 				}
 				switch (target) {
 					case EditableConfigurationTarget.USER_LOCAL:
@@ -558,7 +581,7 @@ export class ConfigurationEditing {
 
 		if (target === EditableConfigurationTarget.WORKSPACE || target === EditableConfigurationTarget.WORKSPACE_LOCAL) {
 			if (!operation.workspaceStandAloneConfigurationKey && !OVERRIDE_PROPERTY_REGEX.test(operation.key)) {
-				if (configurationScope === ConfigurationScope.APPLICATION) {
+				if (configurationScope && APPLICATION_SCOPES.includes(configurationScope)) {
 					throw this.toConfigurationEditingError(ConfigurationEditingErrorCode.ERROR_INVALID_WORKSPACE_CONFIGURATION_APPLICATION, target, operation);
 				}
 				if (configurationScope === ConfigurationScope.MACHINE) {
@@ -605,14 +628,14 @@ export class ConfigurationEditing {
 				// Check for prefix
 				if (config.key === descriptor.key) {
 					const jsonPath = this.isWorkspaceConfigurationResource(resource) ? [descriptor.key] : [];
-					return { key: jsonPath[jsonPath.length - 1], jsonPath, value: config.value, resource: withNullAsUndefined(resource), workspaceStandAloneConfigurationKey: descriptor.key, target };
+					return { key: jsonPath[jsonPath.length - 1], jsonPath, value: config.value, resource: resource ?? undefined, workspaceStandAloneConfigurationKey: descriptor.key, target };
 				}
 
 				// Check for prefix.<setting>
 				const keyPrefix = `${descriptor.key}.`;
 				if (config.key.indexOf(keyPrefix) === 0) {
 					const jsonPath = this.isWorkspaceConfigurationResource(resource) ? [descriptor.key, config.key.substr(keyPrefix.length)] : [config.key.substr(keyPrefix.length)];
-					return { key: jsonPath[jsonPath.length - 1], jsonPath, value: config.value, resource: withNullAsUndefined(resource), workspaceStandAloneConfigurationKey: descriptor.key, target };
+					return { key: jsonPath[jsonPath.length - 1], jsonPath, value: config.value, resource: resource ?? undefined, workspaceStandAloneConfigurationKey: descriptor.key, target };
 				}
 			}
 		}
@@ -622,14 +645,14 @@ export class ConfigurationEditing {
 		const configurationScope = configurationProperties[key]?.scope;
 		let jsonPath = overrides.overrideIdentifiers?.length ? [keyFromOverrideIdentifiers(overrides.overrideIdentifiers), key] : [key];
 		if (target === EditableConfigurationTarget.USER_LOCAL || target === EditableConfigurationTarget.USER_REMOTE) {
-			return { key, jsonPath, value: config.value, resource: withNullAsUndefined(this.getConfigurationFileResource(target, undefined, null, configurationScope)), target };
+			return { key, jsonPath, value: config.value, resource: this.getConfigurationFileResource(target, undefined, null, configurationScope) ?? undefined, target };
 		}
 
 		const resource = this.getConfigurationFileResource(target, undefined, overrides.resource, configurationScope);
 		if (this.isWorkspaceConfigurationResource(resource)) {
 			jsonPath = ['settings', ...jsonPath];
 		}
-		return { key, jsonPath, value: config.value, resource: withNullAsUndefined(resource), target };
+		return { key, jsonPath, value: config.value, resource: resource ?? undefined, target };
 	}
 
 	private isWorkspaceConfigurationResource(resource: URI | null): boolean {
@@ -638,15 +661,27 @@ export class ConfigurationEditing {
 	}
 
 	private getStandaloneConfigurationDescriptors(target: EditableConfigurationTarget): readonly IWorkspaceFileConfigurationDescriptor[] {
-		return target === EditableConfigurationTarget.USER_LOCAL ? USER_STANDALONE_CONFIGURATION_DESCRIPTORS : WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS;
+		if (target === EditableConfigurationTarget.USER_LOCAL) {
+			return USER_STANDALONE_CONFIGURATION_DESCRIPTORS;
+		}
+		if (target === EditableConfigurationTarget.WORKSPACE_LOCAL || target === EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
+			return LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS;
+		}
+		return WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS;
 	}
 
 	private getConfigurationFileResource(target: EditableConfigurationTarget, descriptor: IWorkspaceFileConfigurationDescriptor | undefined, resource: URI | null | undefined, scope: ConfigurationScope | undefined): URI | null {
 		if (target === EditableConfigurationTarget.USER_LOCAL) {
 			if (descriptor?.userStandalonePath) {
-				return this.userDataProfileService.currentProfile.tasksResource;
+				if (descriptor.key === TASKS_CONFIGURATION_KEY) {
+					return this.userDataProfileService.currentProfile.tasksResource;
+				}
+				if (descriptor.key === MCP_CONFIGURATION_KEY) {
+					return this.userDataProfileService.currentProfile.mcpResource;
+				}
 			} else {
-				if (scope === ConfigurationScope.APPLICATION && !this.userDataProfileService.currentProfile.isDefault) {
+				const key = descriptor?.key ?? '';
+				if (!this.userDataProfileService.currentProfile.isDefault && this.configurationService.isSettingAppliedForAllProfiles(key)) {
 					return this.userDataProfilesService.defaultProfile.settingsResource;
 				}
 				return this.userDataProfileService.currentProfile.settingsResource;
@@ -662,7 +697,7 @@ export class ConfigurationEditing {
 
 			if (target === EditableConfigurationTarget.WORKSPACE) {
 				if (workbenchState === WorkbenchState.WORKSPACE) {
-					return withUndefinedAsNull(workspace.configuration);
+					return workspace.configuration ?? null;
 				}
 				if (workbenchState === WorkbenchState.FOLDER) {
 					return workspace.folders[0].toResource(descriptor ? descriptor.folderSharedPath : FOLDER_SETTINGS_PATH);

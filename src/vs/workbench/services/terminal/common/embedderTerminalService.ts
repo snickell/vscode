@@ -3,11 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { InstantiationType, registerSingleton } from 'vs/platform/instantiation/common/extensions';
-import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
-import { Emitter, Event } from 'vs/base/common/event';
-import { IProcessDataEvent, IProcessProperty, IProcessPropertyMap, IProcessReadyEvent, IShellLaunchConfig, ITerminalChildProcess, ITerminalLaunchError, ProcessPropertyType } from 'vs/platform/terminal/common/terminal';
-import { Disposable } from 'vs/base/common/lifecycle';
+import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
+import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
+import { IProcessDataEvent, IProcessProperty, IProcessPropertyMap, IProcessReadyEvent, IShellLaunchConfig, ITerminalChildProcess, ITerminalLaunchError, ProcessPropertyType } from '../../../../platform/terminal/common/terminal.js';
+import { Disposable } from '../../../../base/common/lifecycle.js';
 
 export const IEmbedderTerminalService = createDecorator<IEmbedderTerminalService>('embedderTerminalService');
 
@@ -39,9 +39,9 @@ export interface IEmbedderTerminalOptions {
  * See Pseudoterminal on the vscode API for usage.
  */
 export interface IEmbedderTerminalPty {
-	onDidWrite: Event<string>;
-	onDidClose?: Event<void | number>;
-	onDidChangeName?: Event<string>;
+	readonly onDidWrite: Event<string>;
+	readonly onDidClose?: Event<void | number>;
+	readonly onDidChangeName?: Event<string>;
 
 	open(): void;
 	close(): void;
@@ -56,7 +56,7 @@ class EmbedderTerminalService implements IEmbedderTerminalService {
 	declare _serviceBrand: undefined;
 
 	private readonly _onDidCreateTerminal = new Emitter<IShellLaunchConfig>();
-	readonly onDidCreateTerminal = Event.buffer(this._onDidCreateTerminal.event);
+	readonly onDidCreateTerminal = Event.buffer(this._onDidCreateTerminal.event, 'onDidCreateTerminal');
 
 	createTerminal(options: IEmbedderTerminalOptions): void {
 		const slc: EmbedderTerminal = {
@@ -72,17 +72,17 @@ class EmbedderTerminalService implements IEmbedderTerminalService {
 
 
 class EmbedderTerminalProcess extends Disposable implements ITerminalChildProcess {
-	readonly #pty: IEmbedderTerminalPty;
+	private readonly _pty: IEmbedderTerminalPty;
 
 	readonly shouldPersist = false;
 
 	readonly onProcessData: Event<IProcessDataEvent | string>;
-	readonly #onProcessReady = this._register(new Emitter<IProcessReadyEvent>());
-	readonly onProcessReady = this.#onProcessReady.event;
-	readonly #onDidChangeProperty = this._register(new Emitter<IProcessProperty<any>>());
-	readonly onDidChangeProperty = this.#onDidChangeProperty.event;
-	readonly #onProcessExit = this._register(new Emitter<number | undefined>());
-	readonly onProcessExit = this.#onProcessExit.event;
+	private readonly _onProcessReady = this._register(new Emitter<IProcessReadyEvent>());
+	readonly onProcessReady = this._onProcessReady.event;
+	private readonly _onDidChangeProperty = this._register(new Emitter<IProcessProperty>());
+	readonly onDidChangeProperty = this._onDidChangeProperty.event;
+	private readonly _onProcessExit = this._register(new Emitter<number | undefined>());
+	readonly onProcessExit = this._onProcessExit.event;
 
 	constructor(
 		readonly id: number,
@@ -90,13 +90,13 @@ class EmbedderTerminalProcess extends Disposable implements ITerminalChildProces
 	) {
 		super();
 
-		this.#pty = pty;
-		this.onProcessData = this.#pty.onDidWrite;
-		if (this.#pty.onDidClose) {
-			this._register(this.#pty.onDidClose(e => this.#onProcessExit.fire(e || undefined)));
+		this._pty = pty;
+		this.onProcessData = this._pty.onDidWrite;
+		if (this._pty.onDidClose) {
+			this._register(this._pty.onDidClose(e => this._onProcessExit.fire(e || undefined)));
 		}
-		if (this.#pty.onDidChangeName) {
-			this._register(this.#pty.onDidChangeName(e => this.#onDidChangeProperty.fire({
+		if (this._pty.onDidChangeName) {
+			this._register(this._pty.onDidChangeName(e => this._onDidChangeProperty.fire({
 				type: ProcessPropertyType.Title,
 				value: e
 			})));
@@ -104,12 +104,12 @@ class EmbedderTerminalProcess extends Disposable implements ITerminalChildProces
 	}
 
 	async start(): Promise<ITerminalLaunchError | undefined> {
-		this.#onProcessReady.fire({ pid: -1, cwd: '', windowsPty: undefined });
-		this.#pty.open();
+		this._onProcessReady.fire({ pid: -1, cwd: '', windowsPty: undefined });
+		this._pty.open();
 		return undefined;
 	}
 	shutdown(): void {
-		this.#pty.close();
+		this._pty.close();
 	}
 
 	// TODO: A lot of these aren't useful for some implementations of ITerminalChildProcess, should
@@ -118,13 +118,16 @@ class EmbedderTerminalProcess extends Disposable implements ITerminalChildProces
 	input(): void {
 		// not supported
 	}
+	sendSignal(): void {
+		// not supported
+	}
 	async processBinary(): Promise<void> {
 		// not supported
 	}
 	resize(): void {
 		// no-op
 	}
-	clearBuffer(): void | Promise<void> {
+	clearBuffer(): void {
 		// no-op
 	}
 	acknowledgeDataEvent(): void {
@@ -139,14 +142,11 @@ class EmbedderTerminalProcess extends Disposable implements ITerminalChildProces
 	async getCwd(): Promise<string> {
 		return '';
 	}
-	async getLatency(): Promise<number> {
-		return 0;
-	}
 	refreshProperty<T extends ProcessPropertyType>(property: ProcessPropertyType): Promise<IProcessPropertyMap[T]> {
 		throw new Error(`refreshProperty is not suppported in EmbedderTerminalProcess. property: ${property}`);
 	}
 
-	updateProperty(property: ProcessPropertyType, value: any): Promise<void> {
+	updateProperty(property: ProcessPropertyType, value: unknown): Promise<void> {
 		throw new Error(`updateProperty is not suppported in EmbedderTerminalProcess. property: ${property}, value: ${value}`);
 	}
 }

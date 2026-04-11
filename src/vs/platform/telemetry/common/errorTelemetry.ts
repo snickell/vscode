@@ -3,12 +3,12 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { binarySearch } from 'vs/base/common/arrays';
-import { errorHandler, ErrorNoTelemetry } from 'vs/base/common/errors';
-import { DisposableStore, toDisposable } from 'vs/base/common/lifecycle';
-import { safeStringify } from 'vs/base/common/objects';
-import { FileOperationError } from 'vs/platform/files/common/files';
-import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
+import { binarySearch } from '../../../base/common/arrays.js';
+import { errorHandler, ErrorNoTelemetry, PendingMigrationError } from '../../../base/common/errors.js';
+import { DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
+import { safeStringify } from '../../../base/common/objects.js';
+import { FileOperationError } from '../../files/common/files.js';
+import { ITelemetryService } from './telemetry.js';
 
 type ErrorEventFragment = {
 	owner: 'lramos15, sbatten';
@@ -16,11 +16,11 @@ type ErrorEventFragment = {
 	callstack: { classification: 'CallstackOrException'; purpose: 'PerformanceAndHealth'; comment: 'The callstack of the error.' };
 	msg?: { classification: 'CallstackOrException'; purpose: 'PerformanceAndHealth'; comment: 'The message of the error. Normally the first line int the callstack.' };
 	file?: { classification: 'CallstackOrException'; purpose: 'PerformanceAndHealth'; comment: 'The file the error originated from.' };
-	line?: { classification: 'CallstackOrException'; purpose: 'PerformanceAndHealth'; isMeasurement: true; comment: 'The line the error originate on.' };
-	column?: { classification: 'CallstackOrException'; purpose: 'PerformanceAndHealth'; isMeasurement: true; comment: 'The column of the line which the error orginated on.' };
+	line?: { classification: 'CallstackOrException'; purpose: 'PerformanceAndHealth'; comment: 'The line the error originate on.' };
+	column?: { classification: 'CallstackOrException'; purpose: 'PerformanceAndHealth'; comment: 'The column of the line which the error orginated on.' };
 	uncaught_error_name?: { classification: 'CallstackOrException'; purpose: 'PerformanceAndHealth'; comment: 'If the error is uncaught what is the error type' };
 	uncaught_error_msg?: { classification: 'CallstackOrException'; purpose: 'PerformanceAndHealth'; comment: 'If the error is uncaught this is just msg but for uncaught errors.' };
-	count?: { classification: 'CallstackOrException'; purpose: 'PerformanceAndHealth'; isMeasurement: true; comment: 'How many times this error has been thrown' };
+	count?: { classification: 'CallstackOrException'; purpose: 'PerformanceAndHealth'; comment: 'How many times this error has been thrown' };
 };
 export interface ErrorEvent {
 	callstack: string;
@@ -44,13 +44,27 @@ export namespace ErrorEvent {
 	}
 }
 
+/**
+ * Extracts a callstack and message from an error object for telemetry.
+ * Handles the `Array.isArray(err.stack)` workaround from workerServer.ts
+ * and falls back to {@link safeStringify} when no message is available.
+ */
+export function packErrorForTelemetry(err: any): { callstack: string | undefined; msg: string } {
+	if (!err || typeof err !== 'object') {
+		return { callstack: undefined, msg: safeStringify(err) };
+	}
+	const callstack: string | undefined = Array.isArray(err.stack) ? err.stack.join('\n') : err.stack;
+	const msg = err.message ? err.message : safeStringify(err);
+	return { callstack, msg };
+}
+
 export default abstract class BaseErrorTelemetry {
 
 	public static ERROR_FLUSH_TIMEOUT: number = 5 * 1000;
 
 	private _telemetryService: ITelemetryService;
 	private _flushDelay: number;
-	private _flushHandle: any = -1;
+	private _flushHandle: Timeout | undefined = undefined;
 	private _buffer: ErrorEvent[] = [];
 	protected readonly _disposables = new DisposableStore();
 
@@ -78,7 +92,7 @@ export default abstract class BaseErrorTelemetry {
 
 	private _onErrorEvent(err: any): void {
 
-		if (!err) {
+		if (!err || err.code) {
 			return;
 		}
 
@@ -89,13 +103,16 @@ export default abstract class BaseErrorTelemetry {
 
 		// If it's the no telemetry error it doesn't get logged
 		// TOOD @lramos15 hacking in FileOperation error because it's too messy to adopt ErrorNoTelemetry. A better solution should be found
-		if (ErrorNoTelemetry.isErrorNoTelemetry(err) || err instanceof FileOperationError || (typeof err?.message === 'string' && err.message.includes('Unable to read file'))) {
+		//
+		// Explicitly filter out PendingMigrationError for https://github.com/microsoft/vscode/issues/250648#issuecomment-3394040431
+		// We don't inherit from ErrorNoTelemetry to preserve the name used in reporting for exthostdeprecatedapiusage event.
+		// TODO(deepak1556): remove when PendingMigrationError is no longer needed.
+		if (ErrorNoTelemetry.isErrorNoTelemetry(err) || err instanceof FileOperationError || PendingMigrationError.is(err) || (typeof err?.message === 'string' && err.message.includes('Unable to read file'))) {
 			return;
 		}
 
 		// work around behavior in workerServer.ts that breaks up Error.stack
-		const callstack = Array.isArray(err.stack) ? err.stack.join('\n') : err.stack;
-		const msg = err.message ? err.message : safeStringify(err);
+		const { callstack, msg } = packErrorForTelemetry(err);
 
 		// errors without a stack are not useful telemetry
 		if (!callstack) {
@@ -115,13 +132,13 @@ export default abstract class BaseErrorTelemetry {
 			if (!this._buffer[idx].count) {
 				this._buffer[idx].count = 0;
 			}
-			this._buffer[idx].count! += 1;
+			this._buffer[idx].count += 1;
 		}
 
-		if (this._flushHandle === -1) {
+		if (this._flushHandle === undefined) {
 			this._flushHandle = setTimeout(() => {
 				this._flushBuffer();
-				this._flushHandle = -1;
+				this._flushHandle = undefined;
 			}, this._flushDelay);
 		}
 	}
