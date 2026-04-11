@@ -435,6 +435,30 @@ suite('ExtensionRecommendationsService Test', () => {
 		assert.deepStrictEqual(recommendations, ['mockpublisher1.mockextension1']);
 	});
 
+	test('ExtensionRecommendationsService: Local extensions create and parent-folder delete refresh recommendations', async () => {
+		await setUpFolderWorkspace('myFolder', ['mockPublisher1.mockExtension1']);
+		testObject = disposableStore.add(instantiationService.createInstance(ExtensionRecommendationsService));
+		await testObject.activationPromise;
+
+		const fileService = instantiationService.get(IFileService);
+		const folderDir = joinPath(ROOT, 'myFolder');
+		const localWorkspaceSettingsDir = joinPath(folderDir, '.vscode.local');
+		const localConfigPath = joinPath(localWorkspaceSettingsDir, 'extensions.json');
+
+		await fileService.createFolder(localWorkspaceSettingsDir);
+		let recommendationChange = Event.toPromise(testObject.onDidChangeRecommendations);
+		await fileService.writeFile(localConfigPath, VSBuffer.fromString(JSON.stringify({
+			recommendations: ['mockPublisher2.mockExtension2']
+		}, null, '\t')));
+		await recommendationChange;
+		assert.deepStrictEqual(Object.keys(testObject.getAllRecommendationsWithReason()), ['mockpublisher2.mockextension2']);
+
+		recommendationChange = Event.toPromise(testObject.onDidChangeRecommendations);
+		await fileService.del(localWorkspaceSettingsDir, { recursive: true });
+		await recommendationChange;
+		assert.deepStrictEqual(Object.keys(testObject.getAllRecommendationsWithReason()), ['mockpublisher1.mockextension1']);
+	});
+
 	test('ExtensionRecommendationsService: No Prompt for valid workspace recommendations if they are already installed', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
 		instantiationService.stubPromise(IExtensionManagementService, 'getInstalled', mockExtensionLocal);
 		return testNoPromptForValidRecommendations(mockTestData.validRecommendedExtensions);
