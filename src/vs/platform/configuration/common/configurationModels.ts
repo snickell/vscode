@@ -16,7 +16,7 @@ import { URI, UriComponents } from '../../../base/common/uri.js';
 import { addToValueTree, ConfigurationTarget, getConfigurationValue, IConfigurationChange, IConfigurationChangeEvent, IConfigurationCompareResult, IConfigurationData, IConfigurationModel, IConfigurationOverrides, IConfigurationUpdateOverrides, IConfigurationValue, IInspectValue, IOverrides, removeFromValueTree, toValuesTree } from './configuration.js';
 import { ConfigurationScope, Extensions, IConfigurationPropertySchema, IConfigurationRegistry, overrideIdentifiersFromKey, OVERRIDE_PROPERTY_REGEX, IRegisteredConfigurationPropertySchema } from './configurationRegistry.js';
 import { FileOperation, IFileService } from '../../files/common/files.js';
-import { ILogService } from '../../log/common/log.js';
+import { ILogService, NullLogService } from '../../log/common/log.js';
 import { Registry } from '../../registry/common/platform.js';
 import { Workspace } from '../../workspace/common/workspace.js';
 
@@ -28,6 +28,8 @@ type InspectValue<V> = IInspectValue<V> & { merged?: V };
 
 export class ConfigurationModel implements IConfigurationModel {
 
+	private static readonly nullLogService = new NullLogService();
+
 	static createEmptyModel(logService: ILogService): ConfigurationModel {
 		return new ConfigurationModel({}, [], [], undefined, logService);
 	}
@@ -35,11 +37,11 @@ export class ConfigurationModel implements IConfigurationModel {
 	private readonly overrideConfigurations = new Map<string, ConfigurationModel>();
 
 	constructor(
-		private readonly _contents: IStringDictionary<unknown>,
-		private readonly _keys: string[],
-		private readonly _overrides: IOverrides[],
-		private readonly _raw: IStringDictionary<unknown> | ReadonlyArray<IStringDictionary<unknown> | ConfigurationModel> | undefined,
-		private readonly logService: ILogService
+		private readonly _contents: IStringDictionary<unknown> = {},
+		private readonly _keys: string[] = [],
+		private readonly _overrides: IOverrides[] = [],
+		private readonly _raw: IStringDictionary<unknown> | ReadonlyArray<IStringDictionary<unknown> | ConfigurationModel> | undefined = undefined,
+		private readonly logService: ILogService = ConfigurationModel.nullLogService
 	) {
 	}
 
@@ -563,7 +565,9 @@ class ConfigurationInspectValue<V> implements IConfigurationValue<V> {
 		private readonly localUserConfiguration: ConfigurationModel,
 		private readonly remoteUserConfiguration: ConfigurationModel,
 		private readonly workspaceConfiguration: ConfigurationModel | undefined,
+		private readonly workspaceLocalConfiguration: ConfigurationModel | undefined,
 		private readonly folderConfigurationModel: ConfigurationModel | undefined,
+		private readonly folderLocalConfigurationModel: ConfigurationModel | undefined,
 		private readonly memoryConfigurationModel: ConfigurationModel
 	) {
 	}
@@ -688,6 +692,22 @@ class ConfigurationInspectValue<V> implements IConfigurationValue<V> {
 		return this.toInspectValue(this.workspaceInspectValue);
 	}
 
+	private _workspaceLocalInspectValue: InspectValue<V> | undefined | null;
+	private get workspaceLocalInspectValue(): InspectValue<V> | null {
+		if (this._workspaceLocalInspectValue === undefined) {
+			this._workspaceLocalInspectValue = this.workspaceLocalConfiguration?.inspect<V>(this.key, this.overrides.overrideIdentifier) ?? null;
+		}
+		return this._workspaceLocalInspectValue;
+	}
+
+	get workspaceLocalValue(): V | undefined {
+		return this.workspaceLocalInspectValue?.merged;
+	}
+
+	get workspaceLocal(): IInspectValue<V> | undefined {
+		return this.toInspectValue(this.workspaceLocalInspectValue);
+	}
+
 	private _workspaceFolderInspectValue: InspectValue<V> | undefined | null;
 	private get workspaceFolderInspectValue(): InspectValue<V> | null {
 		if (this._workspaceFolderInspectValue === undefined) {
@@ -702,6 +722,22 @@ class ConfigurationInspectValue<V> implements IConfigurationValue<V> {
 
 	get workspaceFolder(): IInspectValue<V> | undefined {
 		return this.toInspectValue(this.workspaceFolderInspectValue);
+	}
+
+	private _workspaceFolderLocalInspectValue: InspectValue<V> | undefined | null;
+	private get workspaceFolderLocalInspectValue(): InspectValue<V> | null {
+		if (this._workspaceFolderLocalInspectValue === undefined) {
+			this._workspaceFolderLocalInspectValue = this.folderLocalConfigurationModel?.inspect<V>(this.key, this.overrides.overrideIdentifier) ?? null;
+		}
+		return this._workspaceFolderLocalInspectValue;
+	}
+
+	get workspaceFolderLocalValue(): V | undefined {
+		return this.workspaceFolderLocalInspectValue?.merged;
+	}
+
+	get workspaceFolderLocal(): IInspectValue<V> | undefined {
+		return this.toInspectValue(this.workspaceFolderLocalInspectValue);
 	}
 
 	private _memoryInspectValue: InspectValue<V> | undefined;
@@ -724,21 +760,62 @@ class ConfigurationInspectValue<V> implements IConfigurationValue<V> {
 
 export class Configuration {
 
+	private static readonly nullLogService = new NullLogService();
+
 	private _workspaceConsolidatedConfiguration: ConfigurationModel | null = null;
 	private _foldersConsolidatedConfigurations = new ResourceMap<ConfigurationModel>();
 
+	private _defaultConfiguration: ConfigurationModel;
+	private _policyConfiguration: ConfigurationModel;
+	private _applicationConfiguration: ConfigurationModel;
+	private _localUserConfiguration: ConfigurationModel;
+	private _remoteUserConfiguration: ConfigurationModel;
+	private _workspaceConfiguration: ConfigurationModel;
+	private _folderConfigurations: ResourceMap<ConfigurationModel>;
+	private _memoryConfiguration: ConfigurationModel;
+	private _memoryConfigurationByResource: ResourceMap<ConfigurationModel>;
+	private _workspaceLocalConfiguration: ConfigurationModel;
+	private _folderLocalConfigurations: ResourceMap<ConfigurationModel>;
+	private readonly logService: ILogService;
+
 	constructor(
-		private _defaultConfiguration: ConfigurationModel,
-		private _policyConfiguration: ConfigurationModel,
-		private _applicationConfiguration: ConfigurationModel,
-		private _localUserConfiguration: ConfigurationModel,
-		private _remoteUserConfiguration: ConfigurationModel,
-		private _workspaceConfiguration: ConfigurationModel,
-		private _folderConfigurations: ResourceMap<ConfigurationModel>,
-		private _memoryConfiguration: ConfigurationModel,
-		private _memoryConfigurationByResource: ResourceMap<ConfigurationModel>,
-		private readonly logService: ILogService
+		defaultConfiguration: ConfigurationModel,
+		policyConfiguration: ConfigurationModel,
+		applicationConfiguration: ConfigurationModel,
+		localUserConfiguration: ConfigurationModel,
+		remoteUserConfiguration: ConfigurationModel,
+		workspaceConfiguration: ConfigurationModel,
+		folderConfigurations: ResourceMap<ConfigurationModel>,
+		memoryConfiguration: ConfigurationModel,
+		memoryConfigurationByResource: ResourceMap<ConfigurationModel>,
+		workspaceLocalConfigurationOrLogService: ConfigurationModel | ILogService,
+		folderLocalConfigurationsOrLogService?: ResourceMap<ConfigurationModel> | ILogService,
+		logService: ILogService = Configuration.nullLogService
 	) {
+		this._defaultConfiguration = defaultConfiguration;
+		this._policyConfiguration = policyConfiguration;
+		this._applicationConfiguration = applicationConfiguration;
+		this._localUserConfiguration = localUserConfiguration;
+		this._remoteUserConfiguration = remoteUserConfiguration;
+		this._workspaceConfiguration = workspaceConfiguration;
+		this._folderConfigurations = folderConfigurations;
+		this._memoryConfiguration = memoryConfiguration;
+		this._memoryConfigurationByResource = memoryConfigurationByResource;
+
+		if (workspaceLocalConfigurationOrLogService instanceof ConfigurationModel) {
+			this._workspaceLocalConfiguration = workspaceLocalConfigurationOrLogService;
+			if (folderLocalConfigurationsOrLogService instanceof ResourceMap) {
+				this._folderLocalConfigurations = folderLocalConfigurationsOrLogService;
+				this.logService = logService;
+			} else {
+				this._folderLocalConfigurations = new ResourceMap<ConfigurationModel>();
+				this.logService = folderLocalConfigurationsOrLogService ?? logService;
+			}
+		} else {
+			this._workspaceLocalConfiguration = ConfigurationModel.createEmptyModel(workspaceLocalConfigurationOrLogService);
+			this._folderLocalConfigurations = new ResourceMap<ConfigurationModel>();
+			this.logService = workspaceLocalConfigurationOrLogService;
+		}
 	}
 
 	getValue(section: string | undefined, overrides: IConfigurationOverrides, workspace: Workspace | undefined): unknown {
@@ -772,6 +849,7 @@ export class Configuration {
 	inspect<C>(key: string, overrides: IConfigurationOverrides, workspace: Workspace | undefined): IConfigurationValue<C> {
 		const consolidateConfigurationModel = this.getConsolidatedConfigurationModel(key, overrides, workspace);
 		const folderConfigurationModel = this.getFolderConfigurationModelForResource(overrides.resource, workspace);
+		const folderLocalConfigurationModel = this.getFolderLocalConfigurationModelForResource(overrides.resource, workspace);
 		const memoryConfigurationModel = overrides.resource ? this._memoryConfigurationByResource.get(overrides.resource) || this._memoryConfiguration : this._memoryConfiguration;
 		const overrideIdentifiers = new Set<string>();
 		for (const override of consolidateConfigurationModel.overrides) {
@@ -794,7 +872,9 @@ export class Configuration {
 			this.localUserConfiguration,
 			this.remoteUserConfiguration,
 			workspace ? this._workspaceConfiguration : undefined,
+			workspace ? this._workspaceLocalConfiguration : undefined,
 			folderConfigurationModel ? folderConfigurationModel : undefined,
+			folderLocalConfigurationModel ? folderLocalConfigurationModel : undefined,
 			memoryConfigurationModel
 		);
 
@@ -808,12 +888,13 @@ export class Configuration {
 		workspaceFolder: string[];
 	} {
 		const folderConfigurationModel = this.getFolderConfigurationModelForResource(undefined, workspace);
+		const folderLocalConfigurationModel = this.getFolderLocalConfigurationModelForResource(undefined, workspace);
 		return {
 			default: this._defaultConfiguration.keys.slice(0),
 			policy: this._policyConfiguration.keys.slice(0),
 			user: this.userConfiguration.keys.slice(0),
-			workspace: this._workspaceConfiguration.keys.slice(0),
-			workspaceFolder: folderConfigurationModel ? folderConfigurationModel.keys.slice(0) : []
+			workspace: arrays.distinct([...this._workspaceConfiguration.keys, ...this._workspaceLocalConfiguration.keys]),
+			workspaceFolder: folderConfigurationModel || folderLocalConfigurationModel ? arrays.distinct([...(folderConfigurationModel?.keys ?? []), ...(folderLocalConfigurationModel?.keys ?? [])]) : []
 		};
 	}
 
@@ -853,13 +934,29 @@ export class Configuration {
 		this._foldersConsolidatedConfigurations.clear();
 	}
 
+	updateWorkspaceLocalConfiguration(workspaceLocalConfiguration: ConfigurationModel): void {
+		this._workspaceLocalConfiguration = workspaceLocalConfiguration;
+		this._workspaceConsolidatedConfiguration = null;
+		this._foldersConsolidatedConfigurations.clear();
+	}
+
 	updateFolderConfiguration(resource: URI, configuration: ConfigurationModel): void {
 		this._folderConfigurations.set(resource, configuration);
 		this._foldersConsolidatedConfigurations.delete(resource);
 	}
 
+	updateFolderLocalConfiguration(resource: URI, configuration: ConfigurationModel): void {
+		this._folderLocalConfigurations.set(resource, configuration);
+		this._foldersConsolidatedConfigurations.delete(resource);
+	}
+
 	deleteFolderConfiguration(resource: URI): void {
 		this.folderConfigurations.delete(resource);
+		this._foldersConsolidatedConfigurations.delete(resource);
+	}
+
+	deleteFolderLocalConfiguration(resource: URI): void {
+		this.folderLocalConfigurations.delete(resource);
 		this._foldersConsolidatedConfigurations.delete(resource);
 	}
 
@@ -930,12 +1027,31 @@ export class Configuration {
 		return { keys, overrides };
 	}
 
+	compareAndUpdateWorkspaceLocalConfiguration(workspaceLocalConfiguration: ConfigurationModel): IConfigurationChange {
+		const { added, updated, removed, overrides } = compare(this.workspaceLocalConfiguration, workspaceLocalConfiguration);
+		const keys = [...added, ...updated, ...removed];
+		if (keys.length) {
+			this.updateWorkspaceLocalConfiguration(workspaceLocalConfiguration);
+		}
+		return { keys, overrides };
+	}
+
 	compareAndUpdateFolderConfiguration(resource: URI, folderConfiguration: ConfigurationModel): IConfigurationChange {
 		const currentFolderConfiguration = this.folderConfigurations.get(resource);
 		const { added, updated, removed, overrides } = compare(currentFolderConfiguration, folderConfiguration);
 		const keys = [...added, ...updated, ...removed];
 		if (keys.length || !currentFolderConfiguration) {
 			this.updateFolderConfiguration(resource, folderConfiguration);
+		}
+		return { keys, overrides };
+	}
+
+	compareAndUpdateFolderLocalConfiguration(resource: URI, folderLocalConfiguration: ConfigurationModel): IConfigurationChange {
+		const currentFolderLocalConfiguration = this.folderLocalConfigurations.get(resource);
+		const { added, updated, removed, overrides } = compare(currentFolderLocalConfiguration, folderLocalConfiguration);
+		const keys = [...added, ...updated, ...removed];
+		if (keys.length || !currentFolderLocalConfiguration) {
+			this.updateFolderLocalConfiguration(resource, folderLocalConfiguration);
 		}
 		return { keys, overrides };
 	}
@@ -947,6 +1063,16 @@ export class Configuration {
 		}
 		this.deleteFolderConfiguration(folder);
 		const { added, updated, removed, overrides } = compare(folderConfig, undefined);
+		return { keys: [...added, ...updated, ...removed], overrides };
+	}
+
+	compareAndDeleteFolderLocalConfiguration(folder: URI): IConfigurationChange {
+		const folderLocalConfig = this.folderLocalConfigurations.get(folder);
+		if (!folderLocalConfig) {
+			return { keys: [], overrides: [] };
+		}
+		this.deleteFolderLocalConfiguration(folder);
+		const { added, updated, removed, overrides } = compare(folderLocalConfig, undefined);
 		return { keys: [...added, ...updated, ...removed], overrides };
 	}
 
@@ -983,8 +1109,16 @@ export class Configuration {
 		return this._workspaceConfiguration;
 	}
 
+	get workspaceLocalConfiguration(): ConfigurationModel {
+		return this._workspaceLocalConfiguration;
+	}
+
 	get folderConfigurations(): ResourceMap<ConfigurationModel> {
 		return this._folderConfigurations;
+	}
+
+	get folderLocalConfigurations(): ResourceMap<ConfigurationModel> {
+		return this._folderLocalConfigurations;
 	}
 
 	private getConsolidatedConfigurationModel(section: string | undefined, overrides: IConfigurationOverrides, workspace: Workspace | undefined): ConfigurationModel {
@@ -1021,7 +1155,7 @@ export class Configuration {
 
 	private getWorkspaceConsolidatedConfiguration(): ConfigurationModel {
 		if (!this._workspaceConsolidatedConfiguration) {
-			this._workspaceConsolidatedConfiguration = this._defaultConfiguration.merge(this.applicationConfiguration, this.userConfiguration, this._workspaceConfiguration, this._memoryConfiguration);
+			this._workspaceConsolidatedConfiguration = this._defaultConfiguration.merge(this.applicationConfiguration, this.userConfiguration, this._workspaceConfiguration, this._workspaceLocalConfiguration, this._memoryConfiguration);
 		}
 		return this._workspaceConsolidatedConfiguration;
 	}
@@ -1031,8 +1165,9 @@ export class Configuration {
 		if (!folderConsolidatedConfiguration) {
 			const workspaceConsolidateConfiguration = this.getWorkspaceConsolidatedConfiguration();
 			const folderConfiguration = this._folderConfigurations.get(folder);
-			if (folderConfiguration) {
-				folderConsolidatedConfiguration = workspaceConsolidateConfiguration.merge(folderConfiguration);
+			const folderLocalConfiguration = this._folderLocalConfigurations.get(folder);
+			if (folderConfiguration || folderLocalConfiguration) {
+				folderConsolidatedConfiguration = workspaceConsolidateConfiguration.merge(...[folderConfiguration, folderLocalConfiguration].filter((model): model is ConfigurationModel => !!model));
 				this._foldersConsolidatedConfigurations.set(folder, folderConsolidatedConfiguration);
 			} else {
 				folderConsolidatedConfiguration = workspaceConsolidateConfiguration;
@@ -1046,6 +1181,16 @@ export class Configuration {
 			const root = workspace.getFolder(resource);
 			if (root) {
 				return this._folderConfigurations.get(root.uri);
+			}
+		}
+		return undefined;
+	}
+
+	private getFolderLocalConfigurationModelForResource(resource: URI | null | undefined, workspace: Workspace | undefined): ConfigurationModel | undefined {
+		if (workspace && resource) {
+			const root = workspace.getFolder(resource);
+			if (root) {
+				return this._folderLocalConfigurations.get(root.uri);
 			}
 		}
 		return undefined;
@@ -1086,8 +1231,18 @@ export class Configuration {
 				overrides: this._workspaceConfiguration.overrides,
 				keys: this._workspaceConfiguration.keys
 			},
+			workspaceLocal: {
+				contents: this._workspaceLocalConfiguration.contents,
+				overrides: this._workspaceLocalConfiguration.overrides,
+				keys: this._workspaceLocalConfiguration.keys
+			},
 			folders: [...this._folderConfigurations.keys()].reduce<[UriComponents, IConfigurationModel][]>((result, folder) => {
 				const { contents, overrides, keys } = this._folderConfigurations.get(folder)!;
+				result.push([folder, { contents, overrides, keys }]);
+				return result;
+			}, []),
+			foldersLocal: [...this._folderLocalConfigurations.keys()].reduce<[UriComponents, IConfigurationModel][]>((result, folder) => {
+				const { contents, overrides, keys } = this._folderLocalConfigurations.get(folder)!;
 				result.push([folder, { contents, overrides, keys }]);
 				return result;
 			}, [])
@@ -1099,7 +1254,9 @@ export class Configuration {
 		this._defaultConfiguration.keys.forEach(key => keys.add(key));
 		this.userConfiguration.keys.forEach(key => keys.add(key));
 		this._workspaceConfiguration.keys.forEach(key => keys.add(key));
+		this._workspaceLocalConfiguration.keys.forEach(key => keys.add(key));
 		this._folderConfigurations.forEach(folderConfiguration => folderConfiguration.keys.forEach(key => keys.add(key)));
+		this._folderLocalConfigurations.forEach(folderConfiguration => folderConfiguration.keys.forEach(key => keys.add(key)));
 		return [...keys.values()];
 	}
 
@@ -1108,7 +1265,9 @@ export class Configuration {
 		this._defaultConfiguration.getAllOverrideIdentifiers().forEach(key => keys.add(key));
 		this.userConfiguration.getAllOverrideIdentifiers().forEach(key => keys.add(key));
 		this._workspaceConfiguration.getAllOverrideIdentifiers().forEach(key => keys.add(key));
+		this._workspaceLocalConfiguration.getAllOverrideIdentifiers().forEach(key => keys.add(key));
 		this._folderConfigurations.forEach(folderConfiguration => folderConfiguration.getAllOverrideIdentifiers().forEach(key => keys.add(key)));
+		this._folderLocalConfigurations.forEach(folderConfiguration => folderConfiguration.getAllOverrideIdentifiers().forEach(key => keys.add(key)));
 		return [...keys.values()];
 	}
 
@@ -1117,7 +1276,9 @@ export class Configuration {
 		this._defaultConfiguration.getKeysForOverrideIdentifier(overrideIdentifier).forEach(key => keys.add(key));
 		this.userConfiguration.getKeysForOverrideIdentifier(overrideIdentifier).forEach(key => keys.add(key));
 		this._workspaceConfiguration.getKeysForOverrideIdentifier(overrideIdentifier).forEach(key => keys.add(key));
+		this._workspaceLocalConfiguration.getKeysForOverrideIdentifier(overrideIdentifier).forEach(key => keys.add(key));
 		this._folderConfigurations.forEach(folderConfiguration => folderConfiguration.getKeysForOverrideIdentifier(overrideIdentifier).forEach(key => keys.add(key)));
+		this._folderLocalConfigurations.forEach(folderConfiguration => folderConfiguration.getKeysForOverrideIdentifier(overrideIdentifier).forEach(key => keys.add(key)));
 		return [...keys.values()];
 	}
 
@@ -1128,7 +1289,12 @@ export class Configuration {
 		const userLocalConfiguration = this.parseConfigurationModel(data.userLocal, logService);
 		const userRemoteConfiguration = this.parseConfigurationModel(data.userRemote, logService);
 		const workspaceConfiguration = this.parseConfigurationModel(data.workspace, logService);
+		const workspaceLocalConfiguration = this.parseConfigurationModel(data.workspaceLocal, logService);
 		const folders: ResourceMap<ConfigurationModel> = data.folders.reduce((result, value) => {
+			result.set(URI.revive(value[0]), this.parseConfigurationModel(value[1], logService));
+			return result;
+		}, new ResourceMap<ConfigurationModel>());
+		const foldersLocal: ResourceMap<ConfigurationModel> = (data.foldersLocal ?? []).reduce((result, value) => {
 			result.set(URI.revive(value[0]), this.parseConfigurationModel(value[1], logService));
 			return result;
 		}, new ResourceMap<ConfigurationModel>());
@@ -1142,12 +1308,14 @@ export class Configuration {
 			folders,
 			ConfigurationModel.createEmptyModel(logService),
 			new ResourceMap<ConfigurationModel>(),
+			workspaceLocalConfiguration,
+			foldersLocal,
 			logService
 		);
 	}
 
-	private static parseConfigurationModel(model: IConfigurationModel, logService: ILogService): ConfigurationModel {
-		return new ConfigurationModel(model.contents, model.keys, model.overrides, model.raw, logService);
+	private static parseConfigurationModel(model: IConfigurationModel | undefined, logService: ILogService): ConfigurationModel {
+		return model ? new ConfigurationModel(model.contents, model.keys, model.overrides, model.raw, logService) : ConfigurationModel.createEmptyModel(logService);
 	}
 
 }

@@ -784,10 +784,10 @@ export class DefaultSettings extends Disposable {
 		if (!property.scope) {
 			return true;
 		}
-		if (this.target === ConfigurationTarget.WORKSPACE_FOLDER) {
+		if (this.target === ConfigurationTarget.WORKSPACE_FOLDER || this.target === ConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
 			return FOLDER_SCOPES.indexOf(property.scope) !== -1;
 		}
-		if (this.target === ConfigurationTarget.WORKSPACE) {
+		if (this.target === ConfigurationTarget.WORKSPACE || this.target === ConfigurationTarget.WORKSPACE_LOCAL) {
 			return WORKSPACE_SCOPES.indexOf(property.scope) !== -1;
 		}
 		return true;

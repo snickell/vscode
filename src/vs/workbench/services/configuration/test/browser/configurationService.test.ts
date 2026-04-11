@@ -28,7 +28,7 @@ import { IRemoteAgentService } from '../../../remote/common/remoteAgentService.j
 import { FileService } from '../../../../../platform/files/common/fileService.js';
 import { NullLogService } from '../../../../../platform/log/common/log.js';
 import { IRemoteAgentEnvironment } from '../../../../../platform/remote/common/remoteAgentEnvironment.js';
-import { APPLY_ALL_PROFILES_SETTING, IConfigurationCache } from '../../common/configuration.js';
+import { APPLY_ALL_PROFILES_SETTING, FOLDER_LOCAL_SETTINGS_PATH, FOLDER_LOCAL_STANDALONE_CONFIGURATIONS, getWorkspaceLocalConfigPath, IConfigurationCache } from '../../common/configuration.js';
 import { SignService } from '../../../../../platform/sign/browser/signService.js';
 import { FileUserDataProvider } from '../../../../../platform/userData/common/fileUserDataProvider.js';
 import { IKeybindingEditingService, KeybindingsEditingService } from '../../../keybinding/common/keybindingEditing.js';
@@ -2429,6 +2429,38 @@ suite('WorkspaceConfigurationService-Multiroot', () => {
 		assert.strictEqual(actual.value, 'workspaceFolderValue');
 	}));
 
+	test('Local Workspace settings override workspace settings and ignore folders from the local workspace file', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const workspaceLocalResource = getWorkspaceLocalConfigPath(workspaceContextService.getWorkspace().configuration!);
+		await jsonEditingServce.write(workspaceContextService.getWorkspace().configuration!, [{ path: ['settings'], value: { 'configurationService.workspace.testResourceSetting': 'workspaceValue' } }], true);
+		await fileService.writeFile(workspaceLocalResource, VSBuffer.fromString(JSON.stringify({
+			folders: [{ path: joinPath(ROOT, 'c').path }],
+			settings: { 'configurationService.workspace.testResourceSetting': 'workspaceLocalValue' }
+		}, null, '\t')));
+
+		await testObject.reloadConfiguration();
+
+		const actual = testObject.inspect('configurationService.workspace.testResourceSetting', { resource: workspaceContextService.getWorkspace().folders[0].uri });
+		assert.strictEqual(workspaceContextService.getWorkspace().folders.length, 2);
+		assert.strictEqual(actual.workspaceValue, 'workspaceValue');
+		assert.strictEqual(actual.workspaceLocalValue, 'workspaceLocalValue');
+		assert.strictEqual(actual.workspaceFolderValue, undefined);
+		assert.strictEqual(actual.workspaceFolderLocalValue, undefined);
+		assert.strictEqual(actual.value, 'workspaceLocalValue');
+	}));
+
+	test('Local Folder settings override folder settings', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const folder = workspaceContextService.getWorkspace().folders[0];
+		await fileService.writeFile(folder.toResource('.vscode/settings.json'), VSBuffer.fromString('{ "configurationService.workspace.testResourceSetting": "workspaceFolderValue" }'));
+		await fileService.writeFile(folder.toResource(FOLDER_LOCAL_SETTINGS_PATH), VSBuffer.fromString('{ "configurationService.workspace.testResourceSetting": "workspaceFolderLocalValue" }'));
+
+		await testObject.reloadConfiguration();
+
+		const actual = testObject.inspect('configurationService.workspace.testResourceSetting', { resource: folder.uri });
+		assert.strictEqual(actual.workspaceFolderValue, 'workspaceFolderValue');
+		assert.strictEqual(actual.workspaceFolderLocalValue, 'workspaceFolderLocalValue');
+		assert.strictEqual(actual.value, 'workspaceFolderLocalValue');
+	}));
+
 	test('inspect restricted settings', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
 		testObject.updateWorkspaceTrust(false);
 		await jsonEditingServce.write((workspaceContextService.getWorkspace().configuration!), [{ path: ['settings'], value: { 'configurationService.workspace.testRestrictedSetting1': 'workspaceRestrictedValue' } }], true);
@@ -2594,6 +2626,34 @@ suite('WorkspaceConfigurationService-Multiroot', () => {
 		assert.deepStrictEqual(actual, expectedTasksConfiguration);
 	}));
 
+	test('Local Workspace settings expose launch, tasks, and extensions from the local workspace file', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const workspaceLocalResource = getWorkspaceLocalConfigPath(workspaceContextService.getWorkspace().configuration!);
+		await fileService.writeFile(workspaceLocalResource, VSBuffer.fromString(JSON.stringify({
+			launch: { version: '0.2.0', configurations: [{ name: 'localLaunch' }] },
+			tasks: { version: '2.0.0', tasks: [{ label: 'localTask' }] },
+			extensions: { recommendations: ['ms-vscode.js-debug'] }
+		}, null, '\t')));
+
+		await testObject.reloadConfiguration();
+
+		assert.deepStrictEqual(testObject.getValue('launch'), { version: '0.2.0', configurations: [{ name: 'localLaunch' }] });
+		assert.deepStrictEqual(testObject.inspect('tasks').workspaceLocalValue, { version: '2.0.0', tasks: [{ label: 'localTask' }] });
+		assert.deepStrictEqual(testObject.inspect('extensions').workspaceLocalValue, { recommendations: ['ms-vscode.js-debug'] });
+	}));
+
+	test('Local Folder settings expose launch, tasks, and extensions from local standalone files', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const folder = workspaceContextService.getWorkspace().folders[0];
+		await fileService.writeFile(folder.toResource(FOLDER_LOCAL_STANDALONE_CONFIGURATIONS.launch), VSBuffer.fromString('{ "version": "0.2.0", "configurations": [{ "name": "localLaunch" }] }'));
+		await fileService.writeFile(folder.toResource(FOLDER_LOCAL_STANDALONE_CONFIGURATIONS.tasks), VSBuffer.fromString('{ "version": "2.0.0", "tasks": [{ "label": "localTask" }] }'));
+		await fileService.writeFile(folder.toResource(FOLDER_LOCAL_STANDALONE_CONFIGURATIONS.extensions), VSBuffer.fromString('{ "recommendations": ["ms-vscode.js-debug"] }'));
+
+		await testObject.reloadConfiguration();
+
+		assert.deepStrictEqual(testObject.inspect('launch', { resource: folder.uri }).workspaceFolderLocalValue, { version: '0.2.0', configurations: [{ name: 'localLaunch' }] });
+		assert.deepStrictEqual(testObject.getValue(TasksSchemaProperties.Tasks, { resource: folder.uri }), { version: '2.0.0', tasks: [{ label: 'localTask' }] });
+		assert.deepStrictEqual(testObject.inspect('extensions', { resource: folder.uri }).workspaceFolderLocalValue, { recommendations: ['ms-vscode.js-debug'] });
+	}));
+
 	test('update user configuration', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
 		await testObject.updateValue('configurationService.workspace.testSetting', 'userValue', ConfigurationTarget.USER);
 		assert.strictEqual(testObject.getValue('configurationService.workspace.testSetting'), 'userValue');
@@ -2616,6 +2676,17 @@ suite('WorkspaceConfigurationService-Multiroot', () => {
 		disposables.add(testObject.onDidChangeConfiguration(target));
 		await testObject.updateValue('configurationService.workspace.testSetting', 'workspaceValue', ConfigurationTarget.WORKSPACE);
 		assert.ok(target.called);
+	}));
+
+	test('update Local Workspace settings', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const workspaceLocalResource = getWorkspaceLocalConfigPath(workspaceContextService.getWorkspace().configuration!);
+		await testObject.updateValue('configurationService.workspace.testResourceSetting', 'workspaceLocalValue', ConfigurationTarget.WORKSPACE_LOCAL);
+
+		assert.strictEqual(testObject.getValue('configurationService.workspace.testResourceSetting'), 'workspaceLocalValue');
+		assert.strictEqual(testObject.inspect('configurationService.workspace.testResourceSetting').workspaceLocalValue, 'workspaceLocalValue');
+
+		const contents = JSON.parse((await fileService.readFile(workspaceLocalResource)).value.toString());
+		assert.strictEqual(contents.settings['configurationService.workspace.testResourceSetting'], 'workspaceLocalValue');
 	}));
 
 	test('update application setting into workspace configuration in a workspace is not supported', () => {
@@ -2655,6 +2726,17 @@ suite('WorkspaceConfigurationService-Multiroot', () => {
 		disposables.add(testObject.onDidChangeConfiguration(target));
 		await testObject.updateValue('configurationService.workspace.testResourceSetting', 'workspaceFolderValue2', { resource: workspace.folders[0].uri }, ConfigurationTarget.WORKSPACE_FOLDER);
 		assert.ok(target.called);
+	}));
+
+	test('update Local Folder settings', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const workspace = workspaceContextService.getWorkspace();
+		await testObject.updateValue('configurationService.workspace.testResourceSetting', 'workspaceFolderLocalValue', { resource: workspace.folders[0].uri }, ConfigurationTarget.WORKSPACE_FOLDER_LOCAL);
+
+		assert.strictEqual(testObject.getValue('configurationService.workspace.testResourceSetting', { resource: workspace.folders[0].uri }), 'workspaceFolderLocalValue');
+		assert.strictEqual(testObject.inspect('configurationService.workspace.testResourceSetting', { resource: workspace.folders[0].uri }).workspaceFolderLocalValue, 'workspaceFolderLocalValue');
+
+		const contents = JSON.parse((await fileService.readFile(workspace.folders[0].toResource(FOLDER_LOCAL_SETTINGS_PATH))).value.toString());
+		assert.strictEqual(contents['configurationService.workspace.testResourceSetting'], 'workspaceFolderLocalValue');
 	}));
 
 	test('update machine overridable setting in folder', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
@@ -2708,6 +2790,30 @@ suite('WorkspaceConfigurationService-Multiroot', () => {
 		const tasks = { 'version': '2.0.0', tasks: [{ 'label': 'myTask' }] };
 		await testObject.updateValue('tasks', tasks, { resource: workspace.folders[0].uri }, ConfigurationTarget.WORKSPACE, { donotNotifyError: true });
 		assert.deepStrictEqual(testObject.getValue(TasksSchemaProperties.Tasks), tasks);
+	}));
+
+	test('update local launch, tasks, and extensions configuration in a workspace', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const workspace = workspaceContextService.getWorkspace();
+		await testObject.updateValue('launch', { version: '0.2.0', configurations: [{ name: 'localLaunch' }] }, { resource: workspace.folders[0].uri }, ConfigurationTarget.WORKSPACE_LOCAL, { donotNotifyError: true });
+		await testObject.updateValue('tasks', { version: '2.0.0', tasks: [{ label: 'localTask' }] }, { resource: workspace.folders[0].uri }, ConfigurationTarget.WORKSPACE_LOCAL, { donotNotifyError: true });
+		await testObject.updateValue('extensions', { recommendations: ['ms-vscode.js-debug'] }, { resource: workspace.folders[0].uri }, ConfigurationTarget.WORKSPACE_LOCAL, { donotNotifyError: true });
+
+		const contents = JSON.parse((await fileService.readFile(getWorkspaceLocalConfigPath(workspace.configuration!))).value.toString());
+		assert.deepStrictEqual(contents.launch, { version: '0.2.0', configurations: [{ name: 'localLaunch' }] });
+		assert.deepStrictEqual(contents.tasks, { version: '2.0.0', tasks: [{ label: 'localTask' }] });
+		assert.deepStrictEqual(contents.extensions, { recommendations: ['ms-vscode.js-debug'] });
+	}));
+
+	test('update local launch, tasks, and extensions configuration in a folder', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const workspace = workspaceContextService.getWorkspace();
+		const resource = workspace.folders[0].uri;
+		await testObject.updateValue('launch', { version: '0.2.0', configurations: [{ name: 'localLaunch' }] }, { resource }, ConfigurationTarget.WORKSPACE_FOLDER_LOCAL, { donotNotifyError: true });
+		await testObject.updateValue('tasks', { version: '2.0.0', tasks: [{ label: 'localTask' }] }, { resource }, ConfigurationTarget.WORKSPACE_FOLDER_LOCAL, { donotNotifyError: true });
+		await testObject.updateValue('extensions', { recommendations: ['ms-vscode.js-debug'] }, { resource }, ConfigurationTarget.WORKSPACE_FOLDER_LOCAL, { donotNotifyError: true });
+
+		assert.deepStrictEqual(JSON.parse((await fileService.readFile(workspace.folders[0].toResource(FOLDER_LOCAL_STANDALONE_CONFIGURATIONS.launch))).value.toString()), { version: '0.2.0', configurations: [{ name: 'localLaunch' }] });
+		assert.deepStrictEqual(JSON.parse((await fileService.readFile(workspace.folders[0].toResource(FOLDER_LOCAL_STANDALONE_CONFIGURATIONS.tasks))).value.toString()), { version: '2.0.0', tasks: [{ label: 'localTask' }] });
+		assert.deepStrictEqual(JSON.parse((await fileService.readFile(workspace.folders[0].toResource(FOLDER_LOCAL_STANDALONE_CONFIGURATIONS.extensions))).value.toString()), { recommendations: ['ms-vscode.js-debug'] });
 	}));
 
 	test('configuration of newly added folder is available on configuration change event', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {

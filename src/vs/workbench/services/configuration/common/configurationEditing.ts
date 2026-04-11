@@ -13,7 +13,8 @@ import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IWorkspaceContextService, WorkbenchState } from '../../../../platform/workspace/common/workspace.js';
 import { ITextFileService } from '../../textfile/common/textfiles.js';
 import { IConfigurationUpdateOptions, IConfigurationUpdateOverrides } from '../../../../platform/configuration/common/configuration.js';
-import { FOLDER_SETTINGS_PATH, WORKSPACE_STANDALONE_CONFIGURATIONS, TASKS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, USER_STANDALONE_CONFIGURATIONS, TASKS_DEFAULT, FOLDER_SCOPES, IWorkbenchConfigurationService, APPLICATION_SCOPES, MCP_CONFIGURATION_KEY } from './configuration.js';
+import { FOLDER_LOCAL_SETTINGS_PATH, FOLDER_SETTINGS_PATH, FOLDER_SCOPES, IWorkbenchConfigurationService, APPLICATION_SCOPES, MCP_CONFIGURATION_KEY, getWorkspaceLocalConfigPath } from './configuration.js';
+import { EXTENSIONS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, TASKS_CONFIGURATION_KEY, TASKS_DEFAULT, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, USER_STANDALONE_CONFIGURATION_DESCRIPTORS, getWorkspaceFileConfigurationDescriptor, type IWorkspaceFileConfigurationDescriptor } from './workspaceFileConfiguration.js';
 import { FileOperationError, FileOperationResult, IFileService } from '../../../../platform/files/common/files.js';
 import { IResolvedTextEditorModel, ITextModelService } from '../../../../editor/common/services/resolverService.js';
 import { IConfigurationRegistry, Extensions as ConfigurationExtensions, ConfigurationScope, keyFromOverrideIdentifiers, OVERRIDE_PROPERTY_REGEX } from '../../../../platform/configuration/common/configurationRegistry.js';
@@ -126,7 +127,9 @@ export const enum EditableConfigurationTarget {
 	USER_LOCAL = 1,
 	USER_REMOTE,
 	WORKSPACE,
-	WORKSPACE_FOLDER
+	WORKSPACE_LOCAL,
+	WORKSPACE_FOLDER,
+	WORKSPACE_FOLDER_LOCAL
 }
 
 interface IConfigurationEditOperation extends IConfigurationValue {
@@ -277,10 +280,7 @@ export class ConfigurationEditing {
 	}
 
 	private onInvalidConfigurationError(error: ConfigurationEditingError, operation: IConfigurationEditOperation,): void {
-		const openStandAloneConfigurationActionLabel = operation.workspaceStandAloneConfigurationKey === TASKS_CONFIGURATION_KEY ? nls.localize('openTasksConfiguration', "Open Tasks Configuration")
-			: operation.workspaceStandAloneConfigurationKey === LAUNCH_CONFIGURATION_KEY ? nls.localize('openLaunchConfiguration', "Open Launch Configuration")
-				: operation.workspaceStandAloneConfigurationKey === MCP_CONFIGURATION_KEY ? nls.localize('openMcpConfiguration', "Open MCP Configuration")
-					: null;
+		const openStandAloneConfigurationActionLabel = this.getOpenStandaloneConfigurationActionLabel(operation.workspaceStandAloneConfigurationKey);
 		if (openStandAloneConfigurationActionLabel) {
 			this.notificationService.prompt(Severity.Error, error.message,
 				[{
@@ -299,9 +299,7 @@ export class ConfigurationEditing {
 	}
 
 	private onConfigurationFileDirtyError(error: ConfigurationEditingError, operation: IConfigurationEditOperation, scopes: IConfigurationUpdateOverrides | undefined): void {
-		const openStandAloneConfigurationActionLabel = operation.workspaceStandAloneConfigurationKey === TASKS_CONFIGURATION_KEY ? nls.localize('openTasksConfiguration', "Open Tasks Configuration")
-			: operation.workspaceStandAloneConfigurationKey === LAUNCH_CONFIGURATION_KEY ? nls.localize('openLaunchConfiguration', "Open Launch Configuration")
-				: null;
+		const openStandAloneConfigurationActionLabel = this.getOpenStandaloneConfigurationActionLabel(operation.workspaceStandAloneConfigurationKey);
 		if (openStandAloneConfigurationActionLabel) {
 			this.notificationService.prompt(Severity.Error, error.message,
 				[{
@@ -342,11 +340,22 @@ export class ConfigurationEditing {
 			case EditableConfigurationTarget.WORKSPACE:
 				this.preferencesService.openWorkspaceSettings(options);
 				break;
+			case EditableConfigurationTarget.WORKSPACE_LOCAL:
+				this.preferencesService.openWorkspaceLocalSettings(options);
+				break;
 			case EditableConfigurationTarget.WORKSPACE_FOLDER:
 				if (operation.resource) {
 					const workspaceFolder = this.contextService.getWorkspaceFolder(operation.resource);
 					if (workspaceFolder) {
 						this.preferencesService.openFolderSettings({ folderUri: workspaceFolder.uri, jsonEditor: true });
+					}
+				}
+				break;
+			case EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL:
+				if (operation.resource) {
+					const workspaceFolder = this.contextService.getWorkspaceFolder(operation.resource);
+					if (workspaceFolder) {
+						this.preferencesService.openFolderLocalSettings({ folderUri: workspaceFolder.uri, jsonEditor: true });
 					}
 				}
 				break;
@@ -363,6 +372,7 @@ export class ConfigurationEditing {
 	}
 
 	private toErrorMessage(error: ConfigurationEditingErrorCode, target: EditableConfigurationTarget, operation: IConfigurationEditOperation): string {
+		const standaloneConfigurationLabels = this.getStandaloneConfigurationLabels(operation.workspaceStandAloneConfigurationKey);
 		switch (error) {
 
 			// API constraints
@@ -379,11 +389,8 @@ export class ConfigurationEditing {
 
 			// User issues
 			case ConfigurationEditingErrorCode.ERROR_INVALID_CONFIGURATION: {
-				if (operation.workspaceStandAloneConfigurationKey === TASKS_CONFIGURATION_KEY) {
-					return nls.localize('errorInvalidTaskConfiguration', "Unable to write into the tasks configuration file. Please open it to correct errors/warnings in it and try again.");
-				}
-				if (operation.workspaceStandAloneConfigurationKey === LAUNCH_CONFIGURATION_KEY) {
-					return nls.localize('errorInvalidLaunchConfiguration', "Unable to write into the launch configuration file. Please open it to correct errors/warnings in it and try again.");
+				if (standaloneConfigurationLabels) {
+					return nls.localize('errorInvalidStandaloneConfiguration', "Unable to write into the {0} configuration file. Please open it to correct errors/warnings in it and try again.", standaloneConfigurationLabels.file);
 				}
 				if (operation.workspaceStandAloneConfigurationKey === MCP_CONFIGURATION_KEY) {
 					return nls.localize('errorInvalidMCPConfiguration', "Unable to write into the MCP configuration file. Please open it to correct errors/warnings in it and try again.");
@@ -395,6 +402,8 @@ export class ConfigurationEditing {
 						return nls.localize('errorInvalidRemoteConfiguration', "Unable to write into remote user settings. Please open the remote user settings to correct errors/warnings in it and try again.");
 					case EditableConfigurationTarget.WORKSPACE:
 						return nls.localize('errorInvalidConfigurationWorkspace', "Unable to write into workspace settings. Please open the workspace settings to correct errors/warnings in the file and try again.");
+					case EditableConfigurationTarget.WORKSPACE_LOCAL:
+						return nls.localize('errorInvalidConfigurationWorkspaceLocal', "Unable to write into local workspace settings. Please open the local workspace settings to correct errors/warnings in the file and try again.");
 					case EditableConfigurationTarget.WORKSPACE_FOLDER: {
 						let workspaceFolderName: string = '<<unknown>>';
 						if (operation.resource) {
@@ -405,16 +414,23 @@ export class ConfigurationEditing {
 						}
 						return nls.localize('errorInvalidConfigurationFolder', "Unable to write into folder settings. Please open the '{0}' folder settings to correct errors/warnings in it and try again.", workspaceFolderName);
 					}
+					case EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL: {
+						let workspaceFolderName: string = '<<unknown>>';
+						if (operation.resource) {
+							const folder = this.contextService.getWorkspaceFolder(operation.resource);
+							if (folder) {
+								workspaceFolderName = folder.name;
+							}
+						}
+						return nls.localize('errorInvalidConfigurationFolderLocal', "Unable to write into local folder settings. Please open the '{0}' local folder settings to correct errors/warnings in it and try again.", workspaceFolderName);
+					}
 					default:
 						return '';
 				}
 			}
 			case ConfigurationEditingErrorCode.ERROR_CONFIGURATION_FILE_DIRTY: {
-				if (operation.workspaceStandAloneConfigurationKey === TASKS_CONFIGURATION_KEY) {
-					return nls.localize('errorTasksConfigurationFileDirty', "Unable to write into tasks configuration file because the file has unsaved changes. Please save it first and then try again.");
-				}
-				if (operation.workspaceStandAloneConfigurationKey === LAUNCH_CONFIGURATION_KEY) {
-					return nls.localize('errorLaunchConfigurationFileDirty', "Unable to write into launch configuration file because the file has unsaved changes. Please save it first and then try again.");
+				if (standaloneConfigurationLabels) {
+					return nls.localize('errorStandaloneConfigurationFileDirty', "Unable to write into the {0} configuration file because the file has unsaved changes. Please save it first and then try again.", standaloneConfigurationLabels.file);
 				}
 				if (operation.workspaceStandAloneConfigurationKey === MCP_CONFIGURATION_KEY) {
 					return nls.localize('errorMCPConfigurationFileDirty', "Unable to write into MCP configuration file because the file has unsaved changes. Please save it first and then try again.");
@@ -426,6 +442,8 @@ export class ConfigurationEditing {
 						return nls.localize('errorRemoteConfigurationFileDirty', "Unable to write into remote user settings because the file has unsaved changes. Please save the remote user settings file first and then try again.");
 					case EditableConfigurationTarget.WORKSPACE:
 						return nls.localize('errorConfigurationFileDirtyWorkspace', "Unable to write into workspace settings because the file has unsaved changes. Please save the workspace settings file first and then try again.");
+					case EditableConfigurationTarget.WORKSPACE_LOCAL:
+						return nls.localize('errorConfigurationFileDirtyWorkspaceLocal', "Unable to write into local workspace settings because the file has unsaved changes. Please save the local workspace settings file first and then try again.");
 					case EditableConfigurationTarget.WORKSPACE_FOLDER: {
 						let workspaceFolderName: string = '<<unknown>>';
 						if (operation.resource) {
@@ -436,16 +454,23 @@ export class ConfigurationEditing {
 						}
 						return nls.localize('errorConfigurationFileDirtyFolder', "Unable to write into folder settings because the file has unsaved changes. Please save the '{0}' folder settings file first and then try again.", workspaceFolderName);
 					}
+					case EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL: {
+						let workspaceFolderName: string = '<<unknown>>';
+						if (operation.resource) {
+							const folder = this.contextService.getWorkspaceFolder(operation.resource);
+							if (folder) {
+								workspaceFolderName = folder.name;
+							}
+						}
+						return nls.localize('errorConfigurationFileDirtyFolderLocal', "Unable to write into local folder settings because the file has unsaved changes. Please save the '{0}' local folder settings file first and then try again.", workspaceFolderName);
+					}
 					default:
 						return '';
 				}
 			}
 			case ConfigurationEditingErrorCode.ERROR_CONFIGURATION_FILE_MODIFIED_SINCE:
-				if (operation.workspaceStandAloneConfigurationKey === TASKS_CONFIGURATION_KEY) {
-					return nls.localize('errorTasksConfigurationFileModifiedSince', "Unable to write into tasks configuration file because the content of the file is newer.");
-				}
-				if (operation.workspaceStandAloneConfigurationKey === LAUNCH_CONFIGURATION_KEY) {
-					return nls.localize('errorLaunchConfigurationFileModifiedSince', "Unable to write into launch configuration file because the content of the file is newer.");
+				if (standaloneConfigurationLabels) {
+					return nls.localize('errorStandaloneConfigurationFileModifiedSince', "Unable to write into the {0} configuration file because the content of the file is newer.", standaloneConfigurationLabels.file);
 				}
 				if (operation.workspaceStandAloneConfigurationKey === MCP_CONFIGURATION_KEY) {
 					return nls.localize('errorMCPConfigurationFileModifiedSince', "Unable to write into MCP configuration file because the content of the file is newer.");
@@ -457,8 +482,12 @@ export class ConfigurationEditing {
 						return nls.localize('errorRemoteConfigurationFileModifiedSince', "Unable to write into remote user settings because the content of the file is newer.");
 					case EditableConfigurationTarget.WORKSPACE:
 						return nls.localize('errorConfigurationFileModifiedSinceWorkspace', "Unable to write into workspace settings because the content of the file is newer.");
+					case EditableConfigurationTarget.WORKSPACE_LOCAL:
+						return nls.localize('errorConfigurationFileModifiedSinceWorkspaceLocal', "Unable to write into local workspace settings because the content of the file is newer.");
 					case EditableConfigurationTarget.WORKSPACE_FOLDER:
 						return nls.localize('errorConfigurationFileModifiedSinceFolder', "Unable to write into folder settings because the content of the file is newer.");
+					case EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL:
+						return nls.localize('errorConfigurationFileModifiedSinceFolderLocal', "Unable to write into local folder settings because the content of the file is newer.");
 				}
 			case ConfigurationEditingErrorCode.ERROR_INTERNAL: return nls.localize('errorUnknown', "Unable to write to {0} because of an internal error.", this.stringifyTarget(target));
 		}
@@ -472,20 +501,28 @@ export class ConfigurationEditing {
 				return nls.localize('remoteUserTarget', "Remote User Settings");
 			case EditableConfigurationTarget.WORKSPACE:
 				return nls.localize('workspaceTarget', "Workspace Settings");
+			case EditableConfigurationTarget.WORKSPACE_LOCAL:
+				return nls.localize('workspaceLocalTarget', "Local Workspace Settings");
 			case EditableConfigurationTarget.WORKSPACE_FOLDER:
 				return nls.localize('folderTarget', "Folder Settings");
+			case EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL:
+				return nls.localize('folderLocalTarget', "Local Folder Settings");
 			default:
 				return '';
 		}
 	}
 
+	private getOpenStandaloneConfigurationActionLabel(standaloneConfigurationKey: string | undefined): string | null {
+		const standaloneConfigurationLabels = this.getStandaloneConfigurationLabels(standaloneConfigurationKey);
+		return standaloneConfigurationLabels ? nls.localize('openStandaloneConfiguration', "Open {0} Configuration", standaloneConfigurationLabels.title) : null;
+	}
+
 	private defaultResourceValue(resource: URI): string {
 		const basename: string = this.uriIdentityService.extUri.basename(resource);
-		const configurationValue: string = basename.substr(0, basename.length - this.uriIdentityService.extUri.extname(resource).length);
-		switch (configurationValue) {
-			case TASKS_CONFIGURATION_KEY: return TASKS_DEFAULT;
-			default: return '{}';
-		}
+		const configurationValue = basename
+			.substr(0, basename.length - this.uriIdentityService.extUri.extname(resource).length)
+			.replace(/\.local$/i, '');
+		return configurationValue === TASKS_CONFIGURATION_KEY ? TASKS_DEFAULT : '{}';
 	}
 
 	private async resolveModelReference(resource: URI): Promise<IReference<IResolvedTextEditorModel>> {
@@ -529,19 +566,20 @@ export class ConfigurationEditing {
 			}
 		}
 
-		if (operation.workspaceStandAloneConfigurationKey) {
+		const standaloneConfigurationDescriptor = operation.workspaceStandAloneConfigurationKey ? getWorkspaceFileConfigurationDescriptor(operation.workspaceStandAloneConfigurationKey) : undefined;
+		if (standaloneConfigurationDescriptor) {
 			// Global launches are not supported
-			if ((operation.workspaceStandAloneConfigurationKey !== TASKS_CONFIGURATION_KEY) && (operation.workspaceStandAloneConfigurationKey !== MCP_CONFIGURATION_KEY) && (target === EditableConfigurationTarget.USER_LOCAL || target === EditableConfigurationTarget.USER_REMOTE)) {
+			if (!standaloneConfigurationDescriptor.userStandalonePath && (target === EditableConfigurationTarget.USER_LOCAL || target === EditableConfigurationTarget.USER_REMOTE)) {
 				throw this.toConfigurationEditingError(ConfigurationEditingErrorCode.ERROR_INVALID_USER_TARGET, target, operation);
 			}
 		}
 
 		// Target cannot be workspace or folder if no workspace opened
-		if ((target === EditableConfigurationTarget.WORKSPACE || target === EditableConfigurationTarget.WORKSPACE_FOLDER) && this.contextService.getWorkbenchState() === WorkbenchState.EMPTY) {
+		if ((target === EditableConfigurationTarget.WORKSPACE || target === EditableConfigurationTarget.WORKSPACE_LOCAL || target === EditableConfigurationTarget.WORKSPACE_FOLDER || target === EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL) && this.contextService.getWorkbenchState() === WorkbenchState.EMPTY) {
 			throw this.toConfigurationEditingError(ConfigurationEditingErrorCode.ERROR_NO_WORKSPACE_OPENED, target, operation);
 		}
 
-		if (target === EditableConfigurationTarget.WORKSPACE) {
+		if (target === EditableConfigurationTarget.WORKSPACE || target === EditableConfigurationTarget.WORKSPACE_LOCAL) {
 			if (!operation.workspaceStandAloneConfigurationKey && !OVERRIDE_PROPERTY_REGEX.test(operation.key)) {
 				if (configurationScope && APPLICATION_SCOPES.includes(configurationScope)) {
 					throw this.toConfigurationEditingError(ConfigurationEditingErrorCode.ERROR_INVALID_WORKSPACE_CONFIGURATION_APPLICATION, target, operation);
@@ -552,7 +590,7 @@ export class ConfigurationEditing {
 			}
 		}
 
-		if (target === EditableConfigurationTarget.WORKSPACE_FOLDER) {
+		if (target === EditableConfigurationTarget.WORKSPACE_FOLDER || target === EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
 			if (!operation.resource) {
 				throw this.toConfigurationEditingError(ConfigurationEditingErrorCode.ERROR_INVALID_FOLDER_TARGET, target, operation);
 			}
@@ -584,22 +622,20 @@ export class ConfigurationEditing {
 
 		// Check for standalone workspace configurations
 		if (config.key) {
-			const standaloneConfigurationMap = target === EditableConfigurationTarget.USER_LOCAL ? USER_STANDALONE_CONFIGURATIONS : WORKSPACE_STANDALONE_CONFIGURATIONS;
-			const standaloneConfigurationKeys = Object.keys(standaloneConfigurationMap);
-			for (const key of standaloneConfigurationKeys) {
-				const resource = this.getConfigurationFileResource(target, key, standaloneConfigurationMap[key], overrides.resource, undefined);
+			for (const descriptor of this.getStandaloneConfigurationDescriptors(target)) {
+				const resource = this.getConfigurationFileResource(target, descriptor, overrides.resource, undefined, descriptor.key);
 
 				// Check for prefix
-				if (config.key === key) {
-					const jsonPath = this.isWorkspaceConfigurationResource(resource) ? [key] : [];
-					return { key: jsonPath[jsonPath.length - 1], jsonPath, value: config.value, resource: resource ?? undefined, workspaceStandAloneConfigurationKey: key, target };
+				if (config.key === descriptor.key) {
+					const jsonPath = this.isWorkspaceConfigurationResource(resource) ? [descriptor.key] : [];
+					return { key: jsonPath[jsonPath.length - 1], jsonPath, value: config.value, resource: resource ?? undefined, workspaceStandAloneConfigurationKey: descriptor.key, target };
 				}
 
 				// Check for prefix.<setting>
-				const keyPrefix = `${key}.`;
+				const keyPrefix = `${descriptor.key}.`;
 				if (config.key.indexOf(keyPrefix) === 0) {
-					const jsonPath = this.isWorkspaceConfigurationResource(resource) ? [key, config.key.substring(keyPrefix.length)] : [config.key.substring(keyPrefix.length)];
-					return { key: jsonPath[jsonPath.length - 1], jsonPath, value: config.value, resource: resource ?? undefined, workspaceStandAloneConfigurationKey: key, target };
+					const jsonPath = this.isWorkspaceConfigurationResource(resource) ? [descriptor.key, config.key.substr(keyPrefix.length)] : [config.key.substr(keyPrefix.length)];
+					return { key: jsonPath[jsonPath.length - 1], jsonPath, value: config.value, resource: resource ?? undefined, workspaceStandAloneConfigurationKey: descriptor.key, target };
 				}
 			}
 		}
@@ -609,10 +645,10 @@ export class ConfigurationEditing {
 		const configurationScope = configurationProperties[key]?.scope;
 		let jsonPath = overrides.overrideIdentifiers?.length ? [keyFromOverrideIdentifiers(overrides.overrideIdentifiers), key] : [key];
 		if (target === EditableConfigurationTarget.USER_LOCAL || target === EditableConfigurationTarget.USER_REMOTE) {
-			return { key, jsonPath, value: config.value, resource: this.getConfigurationFileResource(target, key, '', null, configurationScope) ?? undefined, target };
+			return { key, jsonPath, value: config.value, resource: this.getConfigurationFileResource(target, undefined, null, configurationScope, key) ?? undefined, target };
 		}
 
-		const resource = this.getConfigurationFileResource(target, key, FOLDER_SETTINGS_PATH, overrides.resource, configurationScope);
+		const resource = this.getConfigurationFileResource(target, undefined, overrides.resource, configurationScope, key);
 		if (this.isWorkspaceConfigurationResource(resource)) {
 			jsonPath = ['settings', ...jsonPath];
 		}
@@ -621,16 +657,30 @@ export class ConfigurationEditing {
 
 	private isWorkspaceConfigurationResource(resource: URI | null): boolean {
 		const workspace = this.contextService.getWorkspace();
-		return !!(workspace.configuration && resource && workspace.configuration.fsPath === resource.fsPath);
+		return !!(workspace.configuration && resource && (this.uriIdentityService.extUri.isEqual(workspace.configuration, resource) || this.uriIdentityService.extUri.isEqual(getWorkspaceLocalConfigPath(workspace.configuration), resource)));
 	}
 
-	private getConfigurationFileResource(target: EditableConfigurationTarget, key: string, relativePath: string, resource: URI | null | undefined, scope: ConfigurationScope | undefined): URI | null {
+	private getStandaloneConfigurationDescriptors(target: EditableConfigurationTarget): readonly IWorkspaceFileConfigurationDescriptor[] {
 		if (target === EditableConfigurationTarget.USER_LOCAL) {
-			if (key === TASKS_CONFIGURATION_KEY) {
-				return this.userDataProfileService.currentProfile.tasksResource;
-			} if (key === MCP_CONFIGURATION_KEY) {
-				return this.userDataProfileService.currentProfile.mcpResource;
+			return USER_STANDALONE_CONFIGURATION_DESCRIPTORS;
+		}
+		if (target === EditableConfigurationTarget.WORKSPACE_LOCAL || target === EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
+			return LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS;
+		}
+		return WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS;
+	}
+
+	private getConfigurationFileResource(target: EditableConfigurationTarget, descriptor: IWorkspaceFileConfigurationDescriptor | undefined, resource: URI | null | undefined, scope: ConfigurationScope | undefined, settingKey?: string): URI | null {
+		if (target === EditableConfigurationTarget.USER_LOCAL) {
+			if (descriptor?.userStandalonePath) {
+				if (descriptor.key === TASKS_CONFIGURATION_KEY) {
+					return this.userDataProfileService.currentProfile.tasksResource;
+				}
+				if (descriptor.key === MCP_CONFIGURATION_KEY) {
+					return this.userDataProfileService.currentProfile.mcpResource;
+				}
 			} else {
+				const key = settingKey ?? descriptor?.key ?? '';
 				if (!this.userDataProfileService.currentProfile.isDefault && this.configurationService.isSettingAppliedForAllProfiles(key)) {
 					return this.userDataProfilesService.defaultProfile.settingsResource;
 				}
@@ -650,7 +700,16 @@ export class ConfigurationEditing {
 					return workspace.configuration ?? null;
 				}
 				if (workbenchState === WorkbenchState.FOLDER) {
-					return workspace.folders[0].toResource(relativePath);
+					return workspace.folders[0].toResource(descriptor ? descriptor.folderSharedPath : FOLDER_SETTINGS_PATH);
+				}
+			}
+
+			if (target === EditableConfigurationTarget.WORKSPACE_LOCAL) {
+				if (workbenchState === WorkbenchState.WORKSPACE && workspace.configuration) {
+					return getWorkspaceLocalConfigPath(workspace.configuration);
+				}
+				if (workbenchState === WorkbenchState.FOLDER) {
+					return workspace.folders[0].toResource(descriptor?.folderLocalPath ?? FOLDER_LOCAL_SETTINGS_PATH);
 				}
 			}
 
@@ -658,11 +717,42 @@ export class ConfigurationEditing {
 				if (resource) {
 					const folder = this.contextService.getWorkspaceFolder(resource);
 					if (folder) {
-						return folder.toResource(relativePath);
+						return folder.toResource(descriptor ? descriptor.folderSharedPath : FOLDER_SETTINGS_PATH);
+					}
+				}
+			}
+
+			if (target === EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
+				if (resource) {
+					const folder = this.contextService.getWorkspaceFolder(resource);
+					if (folder) {
+						return folder.toResource(descriptor?.folderLocalPath ?? FOLDER_LOCAL_SETTINGS_PATH);
 					}
 				}
 			}
 		}
 		return null;
+	}
+
+	private getStandaloneConfigurationLabels(standaloneConfigurationKey: string | undefined): { title: string; file: string } | undefined {
+		switch (getWorkspaceFileConfigurationDescriptor(standaloneConfigurationKey ?? '')?.key) {
+			case TASKS_CONFIGURATION_KEY:
+				return {
+					title: nls.localize('tasksConfigurationTitle', "Tasks"),
+					file: nls.localize('tasksConfigurationLabel', "tasks"),
+				};
+			case LAUNCH_CONFIGURATION_KEY:
+				return {
+					title: nls.localize('launchConfigurationTitle', "Launch"),
+					file: nls.localize('launchConfigurationLabel', "launch"),
+				};
+			case EXTENSIONS_CONFIGURATION_KEY:
+				return {
+					title: nls.localize('extensionsConfigurationTitle', "Extensions"),
+					file: nls.localize('extensionsConfigurationLabel', "extensions"),
+				};
+			default:
+				return undefined;
+		}
 	}
 }

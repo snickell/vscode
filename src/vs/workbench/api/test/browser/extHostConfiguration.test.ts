@@ -51,6 +51,8 @@ suite('ExtHostConfiguration', function () {
 			userRemote: ConfigurationModel.createEmptyModel(new NullLogService()),
 			workspace: ConfigurationModel.createEmptyModel(new NullLogService()),
 			folders: [],
+			workspaceLocal: new ConfigurationModel(),
+			foldersLocal: [],
 			configurationScopes: []
 		};
 	}
@@ -331,6 +333,8 @@ suite('ExtHostConfiguration', function () {
 				}, new NullLogService()),
 				workspace: new ConfigurationModel({}, [], [], undefined, new NullLogService()),
 				folders: [],
+				workspaceLocal: new ConfigurationModel({}, []),
+				foldersLocal: [],
 				configurationScopes: []
 			},
 			new NullLogService()
@@ -405,6 +409,8 @@ suite('ExtHostConfiguration', function () {
 				userRemote: ConfigurationModel.createEmptyModel(new NullLogService()),
 				workspace,
 				folders,
+				workspaceLocal: new ConfigurationModel({}, []),
+				foldersLocal: [],
 				configurationScopes: []
 			},
 			new NullLogService()
@@ -493,6 +499,8 @@ suite('ExtHostConfiguration', function () {
 				userRemote: ConfigurationModel.createEmptyModel(new NullLogService()),
 				workspace,
 				folders,
+				workspaceLocal: new ConfigurationModel({}, []),
+				foldersLocal: [],
 				configurationScopes: []
 			},
 			new NullLogService()
@@ -625,6 +633,8 @@ suite('ExtHostConfiguration', function () {
 					}
 				}),
 				folders,
+				workspaceLocal: new ConfigurationModel({}, []),
+				foldersLocal: [],
 				configurationScopes: []
 			},
 			new NullLogService()
@@ -657,6 +667,75 @@ suite('ExtHostConfiguration', function () {
 		assert.deepStrictEqual(actual.languageIds, ['markdown', 'typescript']);
 	});
 
+	test('inspect exposes Local Workspace settings values', function () {
+		const workspaceUri = URI.file('foo');
+		const extHostWorkspace = createExtHostWorkspace();
+		extHostWorkspace.$initializeWorkspace({
+			'id': 'foo',
+			'folders': [aWorkspaceFolder(workspaceUri, 0)],
+			'name': 'foo'
+		}, true);
+		const testObject = new ExtHostConfigProvider(
+			new class extends mock<MainThreadConfigurationShape>() { },
+			extHostWorkspace,
+			{
+				defaults: toConfigurationModel({
+					'editor.wordWrap': 'off',
+					'[typescript]': {
+						'editor.wordWrap': 'defaultLanguage'
+					}
+				}),
+				policy: new ConfigurationModel(),
+				application: new ConfigurationModel(),
+				userLocal: toConfigurationModel({
+					'editor.wordWrap': 'user'
+				}),
+				userRemote: new ConfigurationModel(),
+				workspace: toConfigurationModel({
+					'editor.wordWrap': 'workspace',
+					'[typescript]': {
+						'editor.wordWrap': 'workspaceLanguage'
+					}
+				}),
+				folders: [[workspaceUri, toConfigurationModel({
+					'editor.wordWrap': 'folder',
+					'[typescript]': {
+						'editor.wordWrap': 'folderLanguage'
+					}
+				})]],
+				workspaceLocal: toConfigurationModel({
+					'editor.wordWrap': 'workspaceLocal',
+					'[typescript]': {
+						'editor.wordWrap': 'workspaceLocalLanguage'
+					}
+				}),
+				foldersLocal: [[workspaceUri, toConfigurationModel({
+					'editor.wordWrap': 'folderLocal',
+					'[typescript]': {
+						'editor.wordWrap': 'folderLocalLanguage'
+					}
+				})]],
+				configurationScopes: []
+			},
+			new NullLogService()
+		);
+
+		const actual = testObject.getConfiguration(undefined, { uri: workspaceUri, languageId: 'typescript' }).inspect('editor.wordWrap')!;
+		assert.strictEqual(actual.defaultValue, 'off');
+		assert.strictEqual(actual.globalValue, 'user');
+		assert.strictEqual(actual.workspaceValue, 'workspace');
+		assert.strictEqual(actual.workspaceLocalValue, 'workspaceLocal');
+		assert.strictEqual(actual.workspaceFolderValue, 'folder');
+		assert.strictEqual(actual.workspaceFolderLocalValue, 'folderLocal');
+		assert.strictEqual(actual.defaultLanguageValue, 'defaultLanguage');
+		assert.strictEqual(actual.globalLanguageValue, undefined);
+		assert.strictEqual(actual.workspaceLanguageValue, 'workspaceLanguage');
+		assert.strictEqual(actual.workspaceLocalLanguageValue, 'workspaceLocalLanguage');
+		assert.strictEqual(actual.workspaceFolderLanguageValue, 'folderLanguage');
+		assert.strictEqual(actual.workspaceFolderLocalLanguageValue, 'folderLocalLanguage');
+		assert.deepStrictEqual(actual.languageIds, ['typescript']);
+	});
+
 	test('application is not set in inspect', () => {
 
 		const testObject = new ExtHostConfigProvider(
@@ -685,6 +764,8 @@ suite('ExtHostConfiguration', function () {
 				userRemote: ConfigurationModel.createEmptyModel(new NullLogService()),
 				workspace: new ConfigurationModel({}, [], [], undefined, new NullLogService()),
 				folders: [],
+				workspaceLocal: new ConfigurationModel({}, []),
+				foldersLocal: [],
 				configurationScopes: []
 			},
 			new NullLogService()

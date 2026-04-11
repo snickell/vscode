@@ -9,7 +9,6 @@ import { IJSONSchema } from '../../../../base/common/jsonSchema.js';
 import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
 import { escapeRegExpCharacters, isFalsyOrWhitespace } from '../../../../base/common/strings.js';
 import { isUndefinedOrNull } from '../../../../base/common/types.js';
-import { URI } from '../../../../base/common/uri.js';
 import { ILanguageService } from '../../../../editor/common/languages/language.js';
 import { ConfigurationTarget, getLanguageTagSettingPlainKey, IConfigurationValue } from '../../../../platform/configuration/common/configuration.js';
 import { ConfigurationDefaultValueSource, ConfigurationScope, EditPresentationTypes, Extensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
@@ -21,7 +20,7 @@ import { IWorkbenchEnvironmentService } from '../../../services/environment/comm
 import { IExtensionSetting, ISearchResult, ISetting, ISettingMatch, SettingMatchType, SettingValueType } from '../../../services/preferences/common/preferences.js';
 import { IUserDataProfileService } from '../../../services/userDataProfile/common/userDataProfile.js';
 import { ENABLE_EXTENSION_TOGGLE_SETTINGS, ENABLE_LANGUAGE_FILTER, MODIFIED_SETTING_TAG, POLICY_SETTING_TAG, REQUIRE_TRUSTED_WORKSPACE_SETTING_TAG, compareTwoNullableNumbers, wordifyKey } from '../common/preferences.js';
-import { SettingsTarget } from './preferencesWidgets.js';
+import { isFolderSettingsTarget, SettingsTarget } from './preferencesWidgets.js';
 import { ITOCEntry, tocData } from './settingsLayout.js';
 
 export const ONLINE_SERVICES_SETTING_TAG = 'usesOnlineServices';
@@ -296,7 +295,9 @@ export class SettingsTreeSettingElement extends SettingsTreeElement {
 
 		switch (targetSelector) {
 			case 'workspaceFolderValue':
+			case 'workspaceFolderLocalValue':
 			case 'workspaceValue':
+			case 'workspaceLocalValue':
 				this.isUntrusted = !!this.setting.restricted && !isWorkspaceTrusted;
 				break;
 		}
@@ -306,6 +307,15 @@ export class SettingsTreeSettingElement extends SettingsTreeElement {
 		const overriddenDefaultsLanguageList: string[] = [];
 		if ((languageSelector || targetSelector !== 'workspaceValue') && typeof inspected.workspaceValue !== 'undefined') {
 			overriddenScopeList.push('workspace:');
+		}
+		if ((languageSelector || targetSelector !== 'workspaceLocalValue') && typeof inspected.workspaceLocalValue !== 'undefined') {
+			overriddenScopeList.push('workspaceLocal:');
+		}
+		if ((languageSelector || targetSelector !== 'workspaceFolderValue') && typeof inspected.workspaceFolderValue !== 'undefined') {
+			overriddenScopeList.push('workspaceFolder:');
+		}
+		if ((languageSelector || targetSelector !== 'workspaceFolderLocalValue') && typeof inspected.workspaceFolderLocalValue !== 'undefined') {
+			overriddenScopeList.push('workspaceFolderLocal:');
 		}
 		if ((languageSelector || targetSelector !== 'userRemoteValue') && typeof inspected.userRemoteValue !== 'undefined') {
 			overriddenScopeList.push('remote:');
@@ -324,6 +334,15 @@ export class SettingsTreeSettingElement extends SettingsTreeElement {
 						}
 						if ((languageSelector !== overrideIdentifier || targetSelector !== 'workspaceValue') && typeof inspectedOverride.workspace?.override !== 'undefined') {
 							overriddenScopeList.push(`workspace:${overrideIdentifier}`);
+						}
+						if ((languageSelector !== overrideIdentifier || targetSelector !== 'workspaceLocalValue') && typeof inspectedOverride.workspaceLocal?.override !== 'undefined') {
+							overriddenScopeList.push(`workspaceLocal:${overrideIdentifier}`);
+						}
+						if ((languageSelector !== overrideIdentifier || targetSelector !== 'workspaceFolderValue') && typeof inspectedOverride.workspaceFolder?.override !== 'undefined') {
+							overriddenScopeList.push(`workspaceFolder:${overrideIdentifier}`);
+						}
+						if ((languageSelector !== overrideIdentifier || targetSelector !== 'workspaceFolderLocalValue') && typeof inspectedOverride.workspaceFolderLocal?.override !== 'undefined') {
+							overriddenScopeList.push(`workspaceFolderLocal:${overrideIdentifier}`);
 						}
 						if ((languageSelector !== overrideIdentifier || targetSelector !== 'userRemoteValue') && typeof inspectedOverride.userRemote?.override !== 'undefined') {
 							overriddenScopeList.push(`remote:${overrideIdentifier}`);
@@ -423,7 +442,7 @@ export class SettingsTreeSettingElement extends SettingsTreeElement {
 	}
 
 	matchesScope(scope: SettingsTarget, isRemote: boolean): boolean {
-		const configTarget = URI.isUri(scope) ? ConfigurationTarget.WORKSPACE_FOLDER : scope;
+		const configTarget = isFolderSettingsTarget(scope) ? scope.target : scope;
 
 		if (!this.setting.scope) {
 			return true;
@@ -433,11 +452,11 @@ export class SettingsTreeSettingElement extends SettingsTreeElement {
 			return APPLICATION_SCOPES.includes(this.setting.scope);
 		}
 
-		if (configTarget === ConfigurationTarget.WORKSPACE_FOLDER) {
+		if (configTarget === ConfigurationTarget.WORKSPACE_FOLDER || configTarget === ConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
 			return FOLDER_SCOPES.includes(this.setting.scope);
 		}
 
-		if (configTarget === ConfigurationTarget.WORKSPACE) {
+		if (configTarget === ConfigurationTarget.WORKSPACE || configTarget === ConfigurationTarget.WORKSPACE_LOCAL) {
 			return WORKSPACE_SCOPES.includes(this.setting.scope);
 		}
 
@@ -703,24 +722,28 @@ export class SettingsTreeModel implements IDisposable {
 interface IInspectResult {
 	isConfigured: boolean;
 	inspected: IConfigurationValue<unknown>;
-	targetSelector: 'applicationValue' | 'userLocalValue' | 'userRemoteValue' | 'workspaceValue' | 'workspaceFolderValue';
+	targetSelector: 'applicationValue' | 'userLocalValue' | 'userRemoteValue' | 'workspaceValue' | 'workspaceLocalValue' | 'workspaceFolderValue' | 'workspaceFolderLocalValue';
 	inspectedLanguageOverrides: Map<string, IConfigurationValue<unknown>>;
 	languageSelector: string | undefined;
 }
 
 export function inspectSetting(key: string, target: SettingsTarget, languageFilter: string | undefined, configurationService: IWorkbenchConfigurationService): IInspectResult {
-	const inspectOverrides = URI.isUri(target) ? { resource: target } : undefined;
+	const inspectOverrides = isFolderSettingsTarget(target) ? { resource: target.uri } : undefined;
 	const inspected = configurationService.inspect(key, inspectOverrides);
 	const targetSelector = target === ConfigurationTarget.APPLICATION ? 'applicationValue' :
 		target === ConfigurationTarget.USER_LOCAL ? 'userLocalValue' :
 			target === ConfigurationTarget.USER_REMOTE ? 'userRemoteValue' :
 				target === ConfigurationTarget.WORKSPACE ? 'workspaceValue' :
-					'workspaceFolderValue';
+					target === ConfigurationTarget.WORKSPACE_LOCAL ? 'workspaceLocalValue' :
+						isFolderSettingsTarget(target) && target.target === ConfigurationTarget.WORKSPACE_FOLDER_LOCAL ? 'workspaceFolderLocalValue' :
+							'workspaceFolderValue';
 	const targetOverrideSelector = target === ConfigurationTarget.APPLICATION ? 'application' :
 		target === ConfigurationTarget.USER_LOCAL ? 'userLocal' :
 			target === ConfigurationTarget.USER_REMOTE ? 'userRemote' :
 				target === ConfigurationTarget.WORKSPACE ? 'workspace' :
-					'workspaceFolder';
+					target === ConfigurationTarget.WORKSPACE_LOCAL ? 'workspaceLocal' :
+						isFolderSettingsTarget(target) && target.target === ConfigurationTarget.WORKSPACE_FOLDER_LOCAL ? 'workspaceFolderLocal' :
+							'workspaceFolder';
 	let isConfigured = typeof inspected[targetSelector] !== 'undefined';
 
 	const overrideIdentifiers = inspected.overrideIdentifiers;
@@ -734,7 +757,7 @@ export function inspectSetting(key: string, target: SettingsTarget, languageFilt
 	if (overrideIdentifiers) {
 		// The setting we're looking at has language overrides.
 		for (const overrideIdentifier of overrideIdentifiers) {
-			inspectedLanguageOverrides.set(overrideIdentifier, configurationService.inspect(key, { overrideIdentifier }));
+			inspectedLanguageOverrides.set(overrideIdentifier, configurationService.inspect(key, { ...inspectOverrides, overrideIdentifier }));
 		}
 
 		// For all language filters, see if there's an override for that filter.

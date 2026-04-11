@@ -47,17 +47,24 @@
         "id": "jsonc",
         "extensions": [
           ".code-workspace",
+          ".code-workspace.local",
           "language-configuration.json",
           "icon-theme.json",
           "color-theme.json"
         ],
         "filenames": [
           "settings.json",
+          "settings.local.json",
+          "workspace.json.local",
           "launch.json",
+          "launch.local.json",
           "tasks.json",
+          "tasks.local.json",
+          "mcp.json",
           "mcp.json",
           "keybindings.json",
           "extensions.json",
+          "extensions.local.json",
           "argv.json",
           "profiles.json",
           "devcontainer.json",
@@ -105,7 +112,15 @@
         "url": "vscode://schemas/workspaceConfig"
       },
       {
+        "fileMatch": "%APP_WORKSPACES_HOME%/*/workspace.json.local",
+        "url": "vscode://schemas/workspaceConfig"
+      },
+      {
         "fileMatch": "**/*.code-workspace",
+        "url": "vscode://schemas/workspaceConfig"
+      },
+      {
+        "fileMatch": "**/*.code-workspace.local",
         "url": "vscode://schemas/workspaceConfig"
       },
       {
@@ -117,11 +132,23 @@
         "url": "vscode://schemas/settings/folder"
       },
       {
+        "fileMatch": "/.vscode/settings.local.json",
+        "url": "vscode://schemas/settings/folder"
+      },
+      {
         "fileMatch": "/.vscode/launch.json",
         "url": "vscode://schemas/launch"
       },
       {
+        "fileMatch": "/.vscode/launch.local.json",
+        "url": "vscode://schemas/launch"
+      },
+      {
         "fileMatch": "/.vscode/tasks.json",
+        "url": "vscode://schemas/tasks"
+      },
+      {
+        "fileMatch": "/.vscode/tasks.local.json",
         "url": "vscode://schemas/tasks"
       },
       {
@@ -154,6 +181,10 @@
       },
       {
         "fileMatch": "/.vscode/extensions.json",
+        "url": "vscode://schemas/extensions"
+      },
+      {
+        "fileMatch": "/.vscode/extensions.local.json",
         "url": "vscode://schemas/extensions"
       },
       {

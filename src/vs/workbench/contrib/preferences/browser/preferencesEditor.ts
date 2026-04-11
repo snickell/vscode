@@ -171,4 +171,3 @@ export class PreferencesEditor extends EditorPane {
 		this.preferencesTabActions.forEach(action => action.dispose());
 	}
 }
-

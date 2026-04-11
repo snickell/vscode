@@ -363,6 +363,23 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 				return accessor.get(IPreferencesService).openWorkspaceSettings(args);
 			}
 		}));
+		this._register(registerAction2(class extends Action2 {
+			constructor() {
+				super({
+					id: 'workbench.action.openWorkspaceLocalSettings',
+					title: { value: nls.localize('openWorkspaceLocalSettings', "Open Local Workspace Settings"), original: 'Open Local Workspace Settings' },
+					category,
+					menu: {
+						id: MenuId.CommandPalette,
+						when: WorkbenchStateContext.notEqualsTo('empty')
+					}
+				});
+			}
+			run(accessor: ServicesAccessor, args?: string | IOpenSettingsActionOptions) {
+				args = typeof args === 'string' ? { query: args } : sanitizeOpenSettingsArgs(args);
+				return accessor.get(IPreferencesService).openWorkspaceLocalSettings(args);
+			}
+		}));
 
 		this._register(registerAction2(class extends Action2 {
 			constructor() {
@@ -400,6 +417,23 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 		this._register(registerAction2(class extends Action2 {
 			constructor() {
 				super({
+					id: 'workbench.action.openWorkspaceLocalSettingsFile',
+					title: { value: nls.localize('openWorkspaceLocalSettingsFile', "Open Local Workspace Settings (JSON)"), original: 'Open Local Workspace Settings (JSON)' },
+					category,
+					menu: {
+						id: MenuId.CommandPalette,
+						when: WorkbenchStateContext.notEqualsTo('empty')
+					}
+				});
+			}
+			run(accessor: ServicesAccessor, args?: IOpenSettingsActionOptions) {
+				args = sanitizeOpenSettingsArgs(args);
+				return accessor.get(IPreferencesService).openWorkspaceLocalSettings({ jsonEditor: true, ...args });
+			}
+		}));
+		this._register(registerAction2(class extends Action2 {
+			constructor() {
+				super({
 					id: 'workbench.action.openFolderSettings',
 					title: nls.localize2('openFolderSettings', "Open Folder Settings"),
 					category,
@@ -422,6 +456,28 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 		this._register(registerAction2(class extends Action2 {
 			constructor() {
 				super({
+					id: 'workbench.action.openFolderLocalSettings',
+					title: { value: nls.localize('openFolderLocalSettings', "Open Local Folder Settings"), original: 'Open Local Folder Settings' },
+					category,
+					menu: {
+						id: MenuId.CommandPalette,
+						when: WorkbenchStateContext.isEqualTo('workspace')
+					}
+				});
+			}
+			async run(accessor: ServicesAccessor, args?: IOpenSettingsActionOptions) {
+				const commandService = accessor.get(ICommandService);
+				const preferencesService = accessor.get(IPreferencesService);
+				const workspaceFolder = await commandService.executeCommand<IWorkspaceFolder>(PICK_WORKSPACE_FOLDER_COMMAND_ID);
+				if (workspaceFolder) {
+					args = sanitizeOpenSettingsArgs(args);
+					await preferencesService.openFolderLocalSettings({ folderUri: workspaceFolder.uri, ...args });
+				}
+			}
+		}));
+		this._register(registerAction2(class extends Action2 {
+			constructor() {
+				super({
 					id: 'workbench.action.openFolderSettingsFile',
 					title: nls.localize2('openFolderSettingsFile', "Open Folder Settings (JSON)"),
 					category,
@@ -438,6 +494,28 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 				if (workspaceFolder) {
 					args = sanitizeOpenSettingsArgs(args);
 					await preferencesService.openFolderSettings({ folderUri: workspaceFolder.uri, jsonEditor: true, ...args });
+				}
+			}
+		}));
+		this._register(registerAction2(class extends Action2 {
+			constructor() {
+				super({
+					id: 'workbench.action.openFolderLocalSettingsFile',
+					title: { value: nls.localize('openFolderLocalSettingsFile', "Open Local Folder Settings (JSON)"), original: 'Open Local Folder Settings (JSON)' },
+					category,
+					menu: {
+						id: MenuId.CommandPalette,
+						when: WorkbenchStateContext.isEqualTo('workspace')
+					}
+				});
+			}
+			async run(accessor: ServicesAccessor, args?: IOpenSettingsActionOptions) {
+				const commandService = accessor.get(ICommandService);
+				const preferencesService = accessor.get(IPreferencesService);
+				const workspaceFolder = await commandService.executeCommand<IWorkspaceFolder>(PICK_WORKSPACE_FOLDER_COMMAND_ID);
+				if (workspaceFolder) {
+					args = sanitizeOpenSettingsArgs(args);
+					await preferencesService.openFolderLocalSettings({ folderUri: workspaceFolder.uri, jsonEditor: true, ...args });
 				}
 			}
 		}));

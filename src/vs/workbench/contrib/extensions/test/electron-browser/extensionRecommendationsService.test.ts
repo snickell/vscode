@@ -15,14 +15,14 @@ import { TestInstantiationService } from '../../../../../platform/instantiation/
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { NullTelemetryService } from '../../../../../platform/telemetry/common/telemetryUtils.js';
-import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { TestLifecycleService } from '../../../../test/browser/workbenchTestServices.js';
 import { TestContextService, TestProductService, TestStorageService } from '../../../../test/common/workbenchTestServices.js';
 import { TestExtensionTipsService, TestSharedProcessService } from '../../../../test/electron-browser/workbenchTestServices.js';
 import { TestNotificationService } from '../../../../../platform/notification/test/common/testNotificationService.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { testWorkspace } from '../../../../../platform/workspace/test/common/testWorkspace.js';
+import { toWorkspaceFolder, IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
+import { testWorkspace, Workspace as TestWorkspace } from '../../../../../platform/workspace/test/common/testWorkspace.js';
 import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { IPager } from '../../../../../base/common/paging.js';
 import { getGalleryExtensionId } from '../../../../../platform/extensionManagement/common/extensionManagementUtil.js';
@@ -47,7 +47,7 @@ import { NoOpWorkspaceTagsService } from '../../../tags/browser/workspaceTagsSer
 import { IWorkspaceTagsService } from '../../../tags/common/workspaceTags.js';
 import { ExtensionsWorkbenchService } from '../../browser/extensionsWorkbenchService.js';
 import { IExtensionService } from '../../../../services/extensions/common/extensions.js';
-import { IWorkspaceExtensionsConfigService, WorkspaceExtensionsConfigService } from '../../../../services/extensionRecommendations/common/workspaceExtensionsConfig.js';
+import { EXTENSIONS_LOCAL_CONFIG, IWorkspaceExtensionsConfigService, WorkspaceExtensionsConfigService } from '../../../../services/extensionRecommendations/common/workspaceExtensionsConfig.js';
 import { IExtensionIgnoredRecommendationsService } from '../../../../services/extensionRecommendations/common/extensionRecommendations.js';
 import { ExtensionIgnoredRecommendationsService } from '../../../../services/extensionRecommendations/common/extensionIgnoredRecommendationsService.js';
 import { IExtensionRecommendationNotificationService } from '../../../../../platform/extensionRecommendations/common/extensionRecommendations.js';
@@ -67,6 +67,7 @@ import { IUpdateService, State } from '../../../../../platform/update/common/upd
 import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
 import { UriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentityService.js';
 import { IMeteredConnectionService } from '../../../../../platform/meteredConnection/common/meteredConnection.js';
+import { getWorkspaceLocalConfigPath } from '../../../../services/configuration/common/configuration.js';
 
 const ROOT = URI.file('tests').with({ scheme: 'vscode-tests' });
 
@@ -320,11 +321,11 @@ suite('ExtensionRecommendationsService Test', () => {
 		});
 	});
 
-	function setUpFolderWorkspace(folderName: string, recommendedExtensions: string[], ignoredRecommendations: string[] = []): Promise<void> {
-		return setUpFolder(folderName, recommendedExtensions, ignoredRecommendations);
+	function setUpFolderWorkspace(folderName: string, recommendedExtensions: string[], ignoredRecommendations: string[] = [], localRecommendedExtensions: string[] = [], localIgnoredRecommendations: string[] = []): Promise<void> {
+		return setUpFolder(folderName, recommendedExtensions, ignoredRecommendations, localRecommendedExtensions, localIgnoredRecommendations);
 	}
 
-	async function setUpFolder(folderName: string, recommendedExtensions: string[], ignoredRecommendations: string[] = []): Promise<void> {
+	async function setUpFolder(folderName: string, recommendedExtensions: string[], ignoredRecommendations: string[] = [], localRecommendedExtensions: string[] = [], localIgnoredRecommendations: string[] = []): Promise<void> {
 		const fileService = instantiationService.get(IFileService);
 		const folderDir = joinPath(ROOT, folderName);
 		const workspaceSettingsDir = joinPath(folderDir, '.vscode');
@@ -334,11 +335,47 @@ suite('ExtensionRecommendationsService Test', () => {
 			'recommendations': recommendedExtensions,
 			'unwantedRecommendations': ignoredRecommendations,
 		}, null, '\t')));
+		if (localRecommendedExtensions.length || localIgnoredRecommendations.length) {
+			const localConfigPath = joinPath(workspaceSettingsDir, 'extensions.local.json');
+			await fileService.writeFile(localConfigPath, VSBuffer.fromString(JSON.stringify({
+				'recommendations': localRecommendedExtensions,
+				'unwantedRecommendations': localIgnoredRecommendations,
+			}, null, '\t')));
+		}
 
 		const myWorkspace = testWorkspace(folderDir);
 
 		instantiationService.stub(IFileService, fileService);
 		workspaceService = new TestContextService(myWorkspace);
+		instantiationService.stub(IWorkspaceContextService, workspaceService);
+		instantiationService.stub(IWorkspaceExtensionsConfigService, disposableStore.add(instantiationService.createInstance(WorkspaceExtensionsConfigService)));
+		instantiationService.stub(IExtensionIgnoredRecommendationsService, disposableStore.add(instantiationService.createInstance(ExtensionIgnoredRecommendationsService)));
+		instantiationService.stub(IExtensionRecommendationNotificationService, disposableStore.add(instantiationService.createInstance(ExtensionRecommendationNotificationService)));
+	}
+
+	async function setUpSavedWorkspace(folderName: string, recommendedExtensions: string[] = [], ignoredRecommendations: string[] = [], localRecommendedExtensions: string[] = [], localIgnoredRecommendations: string[] = []): Promise<void> {
+		const fileService = instantiationService.get(IFileService);
+		const folderDir = joinPath(ROOT, folderName);
+		await fileService.createFolder(folderDir);
+		const workspaceFile = joinPath(ROOT, `${folderName}.code-workspace`);
+		const workspaceContents: { folders: { path: string }[]; extensions?: { recommendations?: string[]; unwantedRecommendations?: string[] } } = { folders: [{ path: folderDir.path }] };
+		if (recommendedExtensions.length || ignoredRecommendations.length) {
+			workspaceContents.extensions = {
+				recommendations: recommendedExtensions,
+				unwantedRecommendations: ignoredRecommendations
+			};
+		}
+		await fileService.writeFile(workspaceFile, VSBuffer.fromString(JSON.stringify(workspaceContents, null, '\t')));
+		if (localRecommendedExtensions.length || localIgnoredRecommendations.length) {
+			await fileService.writeFile(getWorkspaceLocalConfigPath(workspaceFile), VSBuffer.fromString(JSON.stringify({
+				extensions: {
+					recommendations: localRecommendedExtensions,
+					unwantedRecommendations: localIgnoredRecommendations
+				}
+			}, null, '\t')));
+		}
+
+		workspaceService = new TestContextService(new TestWorkspace('test-workspace', [toWorkspaceFolder(folderDir)], workspaceFile));
 		instantiationService.stub(IWorkspaceContextService, workspaceService);
 		instantiationService.stub(IWorkspaceExtensionsConfigService, disposableStore.add(instantiationService.createInstance(WorkspaceExtensionsConfigService)));
 		instantiationService.stub(IExtensionIgnoredRecommendationsService, disposableStore.add(instantiationService.createInstance(ExtensionIgnoredRecommendationsService)));
@@ -386,6 +423,35 @@ suite('ExtensionRecommendationsService Test', () => {
 
 	test('ExtensionRecommendationsService: Prompt for valid workspace recommendations', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
 		await setUpFolderWorkspace('myFolder', mockTestData.recommendedExtensions);
+		testObject = disposableStore.add(instantiationService.createInstance(ExtensionRecommendationsService));
+
+		await Event.toPromise(promptedEmitter.event);
+		const recommendations = Object.keys(testObject.getAllRecommendationsWithReason());
+		const expected = [...mockTestData.validRecommendedExtensions, 'unknown.extension'];
+		assert.strictEqual(recommendations.length, expected.length);
+		expected.forEach(x => {
+			assert.strictEqual(recommendations.indexOf(x.toLowerCase()) > -1, true);
+		});
+	}));
+
+	test('ExtensionRecommendationsService: Prompt for valid Local Folder recommendations', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		await setUpFolderWorkspace('myFolder', [], [], mockTestData.recommendedExtensions);
+		testObject = disposableStore.add(instantiationService.createInstance(ExtensionRecommendationsService));
+
+		await Event.toPromise(promptedEmitter.event);
+		const recommendations = Object.keys(testObject.getAllRecommendationsWithReason());
+		const expected = [...mockTestData.validRecommendedExtensions, 'unknown.extension'];
+		assert.strictEqual(recommendations.length, expected.length);
+		expected.forEach(x => {
+			assert.strictEqual(recommendations.indexOf(x.toLowerCase()) > -1, true);
+		});
+
+		const fileService = instantiationService.get(IFileService);
+		assert.ok(await fileService.exists(joinPath(workspaceService.getWorkspace().folders[0].uri, EXTENSIONS_LOCAL_CONFIG)));
+	}));
+
+	test('ExtensionRecommendationsService: Prompt for valid Local Workspace recommendations', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		await setUpSavedWorkspace('mySavedWorkspace', [], [], mockTestData.recommendedExtensions);
 		testObject = disposableStore.add(instantiationService.createInstance(ExtensionRecommendationsService));
 
 		await Event.toPromise(promptedEmitter.event);

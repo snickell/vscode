@@ -3,20 +3,22 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, dispose, IDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, dispose, IDisposable } from '../../../../base/common/lifecycle.js';
 import { isEqual } from '../../../../base/common/resources.js';
+import { URI } from '../../../../base/common/uri.js';
 import * as nls from '../../../../nls.js';
 import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ConfigurationScope, Extensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
+import { IEditorOptions } from '../../../../platform/editor/common/editor.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IWorkspaceContextService, WorkbenchState } from '../../../../platform/workspace/common/workspace.js';
 import { workbenchConfigurationNodeBase } from '../../../common/configuration.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { EditorInputWithOptions } from '../../../common/editor.js';
 import { SideBySideEditorInput } from '../../../common/editor/sideBySideEditorInput.js';
-import { RegisteredEditorPriority, IEditorResolverService } from '../../../services/editor/common/editorResolverService.js';
+import { EditorInputFactoryObject, RegisteredEditorPriority, IEditorResolverService } from '../../../services/editor/common/editorResolverService.js';
 import { ITextEditorService } from '../../../services/textfile/common/textEditorService.js';
-import { DEFAULT_SETTINGS_EDITOR_SETTING, FOLDER_SETTINGS_PATH, IPreferencesService, USE_SPLIT_JSON_SETTING } from '../../../services/preferences/common/preferences.js';
+import { DEFAULT_SETTINGS_EDITOR_SETTING, FOLDER_LOCAL_SETTINGS_PATH, FOLDER_SETTINGS_PATH, IPreferencesService, USE_SPLIT_JSON_SETTING } from '../../../services/preferences/common/preferences.js';
 import { IUserDataProfileService } from '../../../services/userDataProfile/common/userDataProfile.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { SettingsFileSystemProvider } from './settingsFilesystemProvider.js';
@@ -57,7 +59,11 @@ export class PreferencesContribution extends Disposable implements IWorkbenchCon
 
 		// install editor opening listener unless user has disabled this
 		if (!!this.configurationService.getValue(USE_SPLIT_JSON_SETTING) || !!this.configurationService.getValue(DEFAULT_SETTINGS_EDITOR_SETTING)) {
-			this.editorOpeningListener = this.editorResolverService.registerEditor(
+			const editorInputFactory: EditorInputFactoryObject = {
+				createEditorInput: editorInput => this.createSettingsEditorInput(editorInput.resource, editorInput.options)
+			};
+			const registrations = new DisposableStore();
+			registrations.add(this.editorResolverService.registerEditor(
 				'**/settings.json',
 				{
 					id: SideBySideEditorInput.ID,
@@ -65,37 +71,48 @@ export class PreferencesContribution extends Disposable implements IWorkbenchCon
 					priority: RegisteredEditorPriority.builtin,
 				},
 				{},
+				editorInputFactory
+			));
+			registrations.add(this.editorResolverService.registerEditor(
+				'**/settings.local.json',
 				{
-					createEditorInput: ({ resource, options }): EditorInputWithOptions => {
-						// Global User Settings File
-						if (isEqual(resource, this.userDataProfileService.currentProfile.settingsResource)) {
-							return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.USER_LOCAL, resource), options };
-						}
-
-						// Single Folder Workspace Settings File
-						const state = this.workspaceService.getWorkbenchState();
-						if (state === WorkbenchState.FOLDER) {
-							const folders = this.workspaceService.getWorkspace().folders;
-							if (isEqual(resource, folders[0].toResource(FOLDER_SETTINGS_PATH))) {
-								return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.WORKSPACE, resource), options };
-							}
-						}
-
-						// Multi Folder Workspace Settings File
-						else if (state === WorkbenchState.WORKSPACE) {
-							const folders = this.workspaceService.getWorkspace().folders;
-							for (const folder of folders) {
-								if (isEqual(resource, folder.toResource(FOLDER_SETTINGS_PATH))) {
-									return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.WORKSPACE_FOLDER, resource), options };
-								}
-							}
-						}
-
-						return { editor: this.textEditorService.createTextEditor({ resource }), options };
-					}
-				}
-			);
+					id: SideBySideEditorInput.ID,
+					label: nls.localize('splitSettingsEditorLabel', "Split Settings Editor"),
+					priority: RegisteredEditorPriority.builtin,
+				},
+				{},
+				editorInputFactory
+			));
+			this.editorOpeningListener = registrations;
 		}
+	}
+	private createSettingsEditorInput(resource: URI, options: IEditorOptions | undefined): EditorInputWithOptions {
+		if (isEqual(resource, this.userDataProfileService.currentProfile.settingsResource)) {
+			return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.USER_LOCAL, resource), options };
+		}
+
+		const state = this.workspaceService.getWorkbenchState();
+		if (state === WorkbenchState.FOLDER) {
+			const folder = this.workspaceService.getWorkspace().folders[0];
+			if (isEqual(resource, folder.toResource(FOLDER_SETTINGS_PATH))) {
+				return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.WORKSPACE, resource), options };
+			}
+			if (isEqual(resource, folder.toResource(FOLDER_LOCAL_SETTINGS_PATH))) {
+				return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.WORKSPACE_LOCAL, resource), options };
+			}
+		} else if (state === WorkbenchState.WORKSPACE) {
+			const folders = this.workspaceService.getWorkspace().folders;
+			for (const folder of folders) {
+				if (isEqual(resource, folder.toResource(FOLDER_SETTINGS_PATH))) {
+					return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.WORKSPACE_FOLDER, resource), options };
+				}
+				if (isEqual(resource, folder.toResource(FOLDER_LOCAL_SETTINGS_PATH))) {
+					return { editor: this.preferencesService.createSplitJsonEditorInput(ConfigurationTarget.WORKSPACE_FOLDER_LOCAL, resource), options };
+				}
+			}
+		}
+
+		return { editor: this.textEditorService.createTextEditor({ resource }), options };
 	}
 	override dispose(): void {
 		dispose(this.editorOpeningListener);

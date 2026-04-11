@@ -15,7 +15,6 @@ import * as uuid from '../../../../../base/common/uuid.js';
 import { IConfigurationRegistry, Extensions as ConfigurationExtensions } from '../../../../../platform/configuration/common/configurationRegistry.js';
 import { WorkspaceService } from '../../browser/configurationService.js';
 import { ConfigurationEditing, ConfigurationEditingErrorCode, EditableConfigurationTarget } from '../../common/configurationEditing.js';
-import { WORKSPACE_STANDALONE_CONFIGURATIONS, FOLDER_SETTINGS_PATH, USER_STANDALONE_CONFIGURATIONS, IConfigurationCache } from '../../common/configuration.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { ITextFileService } from '../../../textfile/common/textfiles.js';
@@ -48,6 +47,7 @@ import { IUserDataProfileService } from '../../../userDataProfile/common/userDat
 import { IBrowserWorkbenchEnvironmentService } from '../../../environment/browser/environmentService.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { PolicyCategory } from '../../../../../base/common/policy.js';
+import { FOLDER_LOCAL_SETTINGS_PATH, FOLDER_LOCAL_STANDALONE_CONFIGURATIONS, FOLDER_SETTINGS_PATH, USER_STANDALONE_CONFIGURATIONS, WORKSPACE_STANDALONE_CONFIGURATIONS, IConfigurationCache } from '../../common/configuration.js';
 
 const ROOT = URI.file('tests').with({ scheme: 'vscode-tests' });
 
@@ -295,6 +295,42 @@ suite('ConfigurationEditing', () => {
 		const contents = await fileService.readFile(folderSettingsFile);
 		const parsed = json.parse(contents.value.toString());
 		assert.deepStrictEqual(parsed[key], value);
+	});
+
+	test('write one setting - local workspace file', async () => {
+		const target = joinPath(workspaceService.getWorkspace().folders[0].uri, FOLDER_LOCAL_SETTINGS_PATH);
+		await testObject.writeConfiguration(EditableConfigurationTarget.WORKSPACE_LOCAL, { key: 'configurationEditing.service.testSetting', value: 'value' });
+
+		const contents = await fileService.readFile(target);
+		const parsed = json.parse(contents.value.toString());
+		assert.strictEqual(parsed['configurationEditing.service.testSetting'], 'value');
+	});
+
+	test('write local workspace standalone setting - tasks', async () => {
+		const target = joinPath(workspaceService.getWorkspace().folders[0].uri, FOLDER_LOCAL_STANDALONE_CONFIGURATIONS['tasks']);
+		await testObject.writeConfiguration(EditableConfigurationTarget.WORKSPACE_LOCAL, { key: 'tasks.service.testSetting', value: 'value' });
+
+		const contents = await fileService.readFile(target);
+		const parsed = json.parse(contents.value.toString());
+		assert.strictEqual(parsed['service.testSetting'], 'value');
+	});
+
+	test('write local folder standalone setting - launch', async () => {
+		const target = joinPath(workspaceService.getWorkspace().folders[0].uri, FOLDER_LOCAL_STANDALONE_CONFIGURATIONS['launch']);
+		await testObject.writeConfiguration(EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL, { key: 'launch.configurations', value: [{ name: 'localLaunch' }] }, { scopes: { resource: workspaceService.getWorkspace().folders[0].uri } });
+
+		const contents = await fileService.readFile(target);
+		const parsed = json.parse(contents.value.toString());
+		assert.deepStrictEqual(parsed['configurations'], [{ name: 'localLaunch' }]);
+	});
+
+	test('write local folder standalone setting - extensions', async () => {
+		const target = joinPath(workspaceService.getWorkspace().folders[0].uri, FOLDER_LOCAL_STANDALONE_CONFIGURATIONS['extensions']);
+		await testObject.writeConfiguration(EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL, { key: 'extensions.recommendations', value: ['ms-vscode.js-debug'] }, { scopes: { resource: workspaceService.getWorkspace().folders[0].uri } });
+
+		const contents = await fileService.readFile(target);
+		const parsed = json.parse(contents.value.toString());
+		assert.deepStrictEqual(parsed['recommendations'], ['ms-vscode.js-debug']);
 	});
 
 	test('write workspace standalone setting - empty file', async () => {

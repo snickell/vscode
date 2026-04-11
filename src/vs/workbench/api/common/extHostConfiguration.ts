@@ -41,14 +41,18 @@ export type ConfigurationInspect<T> = {
 	globalRemoteValue?: T;
 	globalValue?: T;
 	workspaceValue?: T;
+	workspaceLocalValue?: T;
 	workspaceFolderValue?: T;
+	workspaceFolderLocalValue?: T;
 
 	defaultLanguageValue?: T;
 	globalLocalLanguageValue?: T;
 	globalRemoteLanguageValue?: T;
 	globalLanguageValue?: T;
 	workspaceLanguageValue?: T;
+	workspaceLocalLanguageValue?: T;
 	workspaceFolderLanguageValue?: T;
+	workspaceFolderLocalLanguageValue?: T;
 
 	languageIds?: string[];
 };
@@ -271,14 +275,18 @@ export class ExtHostConfigProvider {
 						globalRemoteValue: deepClone(config.userRemote?.value),
 						globalValue: deepClone(config.user?.value ?? config.application?.value),
 						workspaceValue: deepClone(config.workspace?.value),
+						workspaceLocalValue: deepClone(config.workspaceLocal?.value),
 						workspaceFolderValue: deepClone(config.workspaceFolder?.value),
+						workspaceFolderLocalValue: deepClone(config.workspaceFolderLocal?.value),
 
 						defaultLanguageValue: deepClone(config.default?.override),
 						globalLocalLanguageValue: deepClone(config.userLocal?.override),
 						globalRemoteLanguageValue: deepClone(config.userRemote?.override),
 						globalLanguageValue: deepClone(config.user?.override ?? config.application?.override),
 						workspaceLanguageValue: deepClone(config.workspace?.override),
+						workspaceLocalLanguageValue: deepClone(config.workspaceLocal?.override),
 						workspaceFolderLanguageValue: deepClone(config.workspaceFolder?.override),
+						workspaceFolderLocalLanguageValue: deepClone(config.workspaceFolderLocal?.override),
 
 						languageIds: deepClone(config.overrideIdentifiers)
 					};

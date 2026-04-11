@@ -306,7 +306,7 @@ class EditSettingRenderer extends Disposable {
 					return true;
 				}
 				if (configurationNode.type === 'boolean' || configurationNode.enum) {
-					if ((<SettingsEditorModel>this.primarySettingsModel).configurationTarget !== ConfigurationTarget.WORKSPACE_FOLDER) {
+					if ((<SettingsEditorModel>this.primarySettingsModel).configurationTarget !== ConfigurationTarget.WORKSPACE_FOLDER && (<SettingsEditorModel>this.primarySettingsModel).configurationTarget !== ConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
 						return true;
 					}
 					if (configurationNode.scope === ConfigurationScope.RESOURCE || configurationNode.scope === ConfigurationScope.LANGUAGE_OVERRIDABLE) {
@@ -565,9 +565,11 @@ class UnsupportedSettingsRenderer extends Disposable implements languages.CodeAc
 								this.handleRemoteUserConfiguration(setting, configuration, markerData);
 								break;
 							case ConfigurationTarget.WORKSPACE:
+							case ConfigurationTarget.WORKSPACE_LOCAL:
 								this.handleWorkspaceConfiguration(setting, configuration, markerData);
 								break;
 							case ConfigurationTarget.WORKSPACE_FOLDER:
+							case ConfigurationTarget.WORKSPACE_FOLDER_LOCAL:
 								this.handleWorkspaceFolderConfiguration(setting, configuration, markerData);
 								break;
 						}

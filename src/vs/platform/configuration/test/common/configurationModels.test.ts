@@ -852,6 +852,42 @@ suite('Configuration', () => {
 		assert.deepStrictEqual(overrideIdentifiers, ['l1', 'l3', 'l4']);
 	});
 
+	test('Test inspect for local workspace and folder configuration', () => {
+		const folder = URI.file('folder1');
+		const folders = new ResourceMap<ConfigurationModel>();
+		const foldersLocal = new ResourceMap<ConfigurationModel>();
+		folders.set(folder, parseConfigurationModel({ 'editor.wordWrap': 'folder' }));
+		foldersLocal.set(folder, parseConfigurationModel({ 'editor.wordWrap': 'folderLocal' }));
+
+		const workspace = new Workspace('a', [new WorkspaceFolder({ index: 0, name: 'a', uri: folder })]);
+		const testObject = new Configuration(
+			parseConfigurationModel({ 'editor.wordWrap': 'default' }),
+			new ConfigurationModel(),
+			new ConfigurationModel(),
+			parseConfigurationModel({ 'editor.wordWrap': 'user' }),
+			new ConfigurationModel(),
+			parseConfigurationModel({ 'editor.wordWrap': 'workspace' }),
+			folders,
+			new ConfigurationModel(),
+			new ResourceMap<ConfigurationModel>(),
+			parseConfigurationModel({ 'editor.wordWrap': 'workspaceLocal' }),
+			foldersLocal
+		);
+
+		const actual = testObject.inspect<string>('editor.wordWrap', { resource: folder }, workspace);
+		assert.strictEqual(actual.defaultValue, 'default');
+		assert.strictEqual(actual.userValue, 'user');
+		assert.strictEqual(actual.workspaceValue, 'workspace');
+		assert.strictEqual(actual.workspaceLocalValue, 'workspaceLocal');
+		assert.strictEqual(actual.workspaceFolderValue, 'folder');
+		assert.strictEqual(actual.workspaceFolderLocalValue, 'folderLocal');
+		assert.strictEqual(actual.value, 'folderLocal');
+
+		const keys = testObject.keys(workspace);
+		assert.deepStrictEqual(keys.workspace, ['editor.wordWrap']);
+		assert.deepStrictEqual(keys.workspaceFolder, []);
+	});
+
 	test('Test update value', () => {
 		const parser = new ConfigurationModelParser('test', new NullLogService());
 		parser.parse(JSON.stringify({ 'a': 1 }));

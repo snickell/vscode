@@ -21,7 +21,7 @@ import { IConfigurationRegistry, Extensions, allSettings, windowSettings, resour
 import { IStoredWorkspaceFolder, isStoredWorkspaceFolder, IWorkspaceFolderCreationData, getStoredWorkspaceFolder, toWorkspaceFolders } from '../../../../platform/workspaces/common/workspaces.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ConfigurationEditing, EditableConfigurationTarget } from '../common/configurationEditing.js';
-import { WorkspaceConfiguration, FolderConfiguration, RemoteUserConfiguration, UserConfiguration, DefaultConfiguration, ApplicationConfiguration } from './configuration.js';
+import { WorkspaceConfiguration, FolderConfiguration, RemoteUserConfiguration, UserConfiguration, DefaultConfiguration, ApplicationConfiguration, type IWorkspaceConfigurationModels } from './configuration.js';
 import { IJSONSchema, IJSONSchemaMap } from '../../../../base/common/jsonSchema.js';
 import { mark } from '../../../../base/common/performance.js';
 import { IRemoteAgentService } from '../../remote/common/remoteAgentService.js';
@@ -129,7 +129,21 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 		this.defaultConfiguration = this._register(new DefaultConfiguration(userDataProfileService.currentProfile.id, configurationCache, environmentService, logService));
 		this.policyConfiguration = policyService instanceof NullPolicyService ? new NullPolicyConfiguration() : this._register(new PolicyConfiguration(this.defaultConfiguration, policyService, logService));
 		this.configurationCache = configurationCache;
-		this._configuration = new Configuration(this.defaultConfiguration.configurationModel, this.policyConfiguration.configurationModel, ConfigurationModel.createEmptyModel(logService), ConfigurationModel.createEmptyModel(logService), ConfigurationModel.createEmptyModel(logService), ConfigurationModel.createEmptyModel(logService), new ResourceMap(), ConfigurationModel.createEmptyModel(logService), new ResourceMap<ConfigurationModel>(), this.workspace, logService);
+		this._configuration = new Configuration(
+			this.defaultConfiguration.configurationModel,
+			this.policyConfiguration.configurationModel,
+			ConfigurationModel.createEmptyModel(logService),
+			ConfigurationModel.createEmptyModel(logService),
+			ConfigurationModel.createEmptyModel(logService),
+			ConfigurationModel.createEmptyModel(logService),
+			new ResourceMap(),
+			ConfigurationModel.createEmptyModel(logService),
+			new ResourceMap<ConfigurationModel>(),
+			this.workspace,
+			ConfigurationModel.createEmptyModel(logService),
+			new ResourceMap<ConfigurationModel>(),
+			logService
+		);
 		this.applicationConfigurationDisposables = this._register(new DisposableStore());
 		this.createApplicationConfiguration();
 		this.localUserConfiguration = this._register(new UserConfiguration(userDataProfileService.currentProfile.settingsResource, userDataProfileService.currentProfile.tasksResource, userDataProfileService.currentProfile.mcpResource, { scopes: getLocalUserConfigurationScopes(userDataProfileService.currentProfile, !!remoteAuthority) }, fileService, uriIdentityService, logService));
@@ -401,7 +415,9 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 				return;
 
 			case ConfigurationTarget.WORKSPACE:
+			case ConfigurationTarget.WORKSPACE_LOCAL:
 			case ConfigurationTarget.WORKSPACE_FOLDER:
+			case ConfigurationTarget.WORKSPACE_FOLDER_LOCAL:
 				await this.reloadWorkspaceConfiguration();
 				return;
 		}
@@ -458,22 +474,27 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 		if (this.isWorkspaceTrusted !== trusted) {
 			this.isWorkspaceTrusted = trusted;
 			const data = this._configuration.toData();
-			const folderConfigurationModels: (ConfigurationModel | undefined)[] = [];
+			const folderConfigurationModels: IWorkspaceConfigurationModels[] = [];
 			for (const folder of this.workspace.folders) {
 				const folderConfiguration = this.cachedFolderConfigs.get(folder.uri);
-				let configurationModel: ConfigurationModel | undefined;
+				let configurationModels: IWorkspaceConfigurationModels | undefined;
 				if (folderConfiguration) {
-					configurationModel = folderConfiguration.updateWorkspaceTrust(this.isWorkspaceTrusted);
-					this._configuration.updateFolderConfiguration(folder.uri, configurationModel);
+					configurationModels = folderConfiguration.updateWorkspaceTrustConfigurationModels(this.isWorkspaceTrusted);
+					this._configuration.updateFolderConfiguration(folder.uri, configurationModels.shared);
+					this._configuration.updateFolderLocalConfiguration(folder.uri, configurationModels.local);
 				}
-				folderConfigurationModels.push(configurationModel);
+				if (configurationModels) {
+					folderConfigurationModels.push(configurationModels);
+				}
 			}
 			if (this.getWorkbenchState() === WorkbenchState.FOLDER) {
 				if (folderConfigurationModels[0]) {
-					this._configuration.updateWorkspaceConfiguration(folderConfigurationModels[0]);
+					this._configuration.updateWorkspaceConfiguration(folderConfigurationModels[0].shared);
+					this._configuration.updateWorkspaceLocalConfiguration(folderConfigurationModels[0].local);
 				}
 			} else {
 				this._configuration.updateWorkspaceConfiguration(this.workspaceConfiguration.updateWorkspaceTrust(this.isWorkspaceTrusted));
+				this._configuration.updateWorkspaceLocalConfiguration(this.workspaceConfiguration.getLocalConfiguration());
 			}
 			this.updateRestrictedSettings();
 
@@ -697,11 +718,30 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 		const folderConfigurations = await this.loadFolderConfigurations(folders);
 
 		const workspaceConfiguration = this.getWorkspaceConfigurationModel(folderConfigurations);
+		const workspaceLocalConfiguration = this.getWorkspaceLocalConfigurationModel(folderConfigurations);
 		const folderConfigurationModels = new ResourceMap<ConfigurationModel>();
-		folderConfigurations.forEach((folderConfiguration, index) => folderConfigurationModels.set(folders[index].uri, folderConfiguration));
+		const folderLocalConfigurationModels = new ResourceMap<ConfigurationModel>();
+		folderConfigurations.forEach((folderConfiguration, index) => {
+			folderConfigurationModels.set(folders[index].uri, folderConfiguration.shared);
+			folderLocalConfigurationModels.set(folders[index].uri, folderConfiguration.local);
+		});
 
 		const currentConfiguration = this._configuration;
-		this._configuration = new Configuration(this.defaultConfiguration.configurationModel, this.policyConfiguration.configurationModel, applicationConfigurationModel, userConfigurationModel, remoteUserConfigurationModel, workspaceConfiguration, folderConfigurationModels, ConfigurationModel.createEmptyModel(this.logService), new ResourceMap<ConfigurationModel>(), this.workspace, this.logService);
+		this._configuration = new Configuration(
+			this.defaultConfiguration.configurationModel,
+			this.policyConfiguration.configurationModel,
+			applicationConfigurationModel,
+			userConfigurationModel,
+			remoteUserConfigurationModel,
+			workspaceConfiguration,
+			folderConfigurationModels,
+			ConfigurationModel.createEmptyModel(this.logService),
+			new ResourceMap<ConfigurationModel>(),
+			this.workspace,
+			workspaceLocalConfiguration,
+			folderLocalConfigurationModels,
+			this.logService
+		);
 
 		this.initialized = true;
 
@@ -713,12 +753,23 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 		this.updateRestrictedSettings();
 	}
 
-	private getWorkspaceConfigurationModel(folderConfigurations: ConfigurationModel[]): ConfigurationModel {
+	private getWorkspaceConfigurationModel(folderConfigurations: IWorkspaceConfigurationModels[]): ConfigurationModel {
 		switch (this.getWorkbenchState()) {
 			case WorkbenchState.FOLDER:
-				return folderConfigurations[0];
+				return folderConfigurations[0].shared;
 			case WorkbenchState.WORKSPACE:
 				return this.workspaceConfiguration.getConfiguration();
+			default:
+				return ConfigurationModel.createEmptyModel(this.logService);
+		}
+	}
+
+	private getWorkspaceLocalConfigurationModel(folderConfigurations: IWorkspaceConfigurationModels[]): ConfigurationModel {
+		switch (this.getWorkbenchState()) {
+			case WorkbenchState.FOLDER:
+				return folderConfigurations[0].local;
+			case WorkbenchState.WORKSPACE:
+				return this.workspaceConfiguration.getLocalConfiguration();
 			default:
 				return ConfigurationModel.createEmptyModel(this.logService);
 		}
@@ -758,15 +809,21 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 			if (this.getWorkbenchState() === WorkbenchState.FOLDER) {
 				const folderConfiguration = this.cachedFolderConfigs.get(this.workspace.folders[0].uri);
 				if (folderConfiguration) {
-					this._configuration.updateWorkspaceConfiguration(folderConfiguration.reparse());
-					this._configuration.updateFolderConfiguration(this.workspace.folders[0].uri, folderConfiguration.reparse());
+					const configurationModels = folderConfiguration.reparseConfigurationModels();
+					this._configuration.updateWorkspaceConfiguration(configurationModels.shared);
+					this._configuration.updateWorkspaceLocalConfiguration(configurationModels.local);
+					this._configuration.updateFolderConfiguration(this.workspace.folders[0].uri, configurationModels.shared);
+					this._configuration.updateFolderLocalConfiguration(this.workspace.folders[0].uri, configurationModels.local);
 				}
 			} else {
 				this._configuration.updateWorkspaceConfiguration(this.workspaceConfiguration.reparseWorkspaceSettings());
+				this._configuration.updateWorkspaceLocalConfiguration(this.workspaceConfiguration.getLocalConfiguration());
 				for (const folder of this.workspace.folders) {
 					const folderConfiguration = this.cachedFolderConfigs.get(folder.uri);
 					if (folderConfiguration) {
-						this._configuration.updateFolderConfiguration(folder.uri, folderConfiguration.reparse());
+						const configurationModels = folderConfiguration.reparseConfigurationModels();
+						this._configuration.updateFolderConfiguration(folder.uri, configurationModels.shared);
+						this._configuration.updateFolderLocalConfiguration(folder.uri, configurationModels.local);
 					}
 				}
 			}
@@ -846,7 +903,7 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 				}
 			}
 
-			await this.updateWorkspaceConfiguration(newFolders, this.workspaceConfiguration.getConfiguration(), fromCache);
+			await this.updateWorkspaceConfiguration(newFolders, this.workspaceConfiguration.getConfiguration(), this.workspaceConfiguration.getLocalConfiguration(), fromCache);
 		}
 	}
 
@@ -900,19 +957,20 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 		}
 	}
 
-	private async updateWorkspaceConfiguration(workspaceFolders: WorkspaceFolder[], configuration: ConfigurationModel, fromCache: boolean): Promise<void> {
+	private async updateWorkspaceConfiguration(workspaceFolders: WorkspaceFolder[], configuration: ConfigurationModel, localConfiguration: ConfigurationModel, fromCache: boolean): Promise<void> {
 		const previous = { data: this._configuration.toData(), workspace: this.workspace };
-		const change = this._configuration.compareAndUpdateWorkspaceConfiguration(configuration);
+		const workspaceChange = this._configuration.compareAndUpdateWorkspaceConfiguration(configuration);
+		const workspaceLocalChange = this._configuration.compareAndUpdateWorkspaceLocalConfiguration(localConfiguration);
 		const changes = this.compareFolders(this.workspace.folders, workspaceFolders);
 		if (changes.added.length || changes.removed.length || changes.changed.length) {
 			this.workspace.folders = workspaceFolders;
-			const change = await this.onFoldersChanged();
+			const folderChange = await this.onFoldersChanged();
 			await this.handleWillChangeWorkspaceFolders(changes, fromCache);
-			this.triggerConfigurationChange(change, previous, ConfigurationTarget.WORKSPACE_FOLDER);
+			this.triggerConfigurationChange(folderChange, previous, ConfigurationTarget.WORKSPACE_FOLDER);
 			this._onDidChangeWorkspaceFolders.fire(changes);
-		} else {
-			this.triggerConfigurationChange(change, previous, ConfigurationTarget.WORKSPACE);
 		}
+		this.triggerConfigurationChange(workspaceChange, previous, ConfigurationTarget.WORKSPACE);
+		this.triggerConfigurationChange(workspaceLocalChange, previous, ConfigurationTarget.WORKSPACE_LOCAL);
 		this.updateRestrictedSettings();
 	}
 
@@ -931,12 +989,16 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 	private async onWorkspaceFolderConfigurationChanged(folder: IWorkspaceFolder): Promise<void> {
 		const [folderConfiguration] = await this.loadFolderConfigurations([folder]);
 		const previous = { data: this._configuration.toData(), workspace: this.workspace };
-		const folderConfigurationChange = this._configuration.compareAndUpdateFolderConfiguration(folder.uri, folderConfiguration);
+		const folderConfigurationChange = this._configuration.compareAndUpdateFolderConfiguration(folder.uri, folderConfiguration.shared);
+		const folderLocalConfigurationChange = this._configuration.compareAndUpdateFolderLocalConfiguration(folder.uri, folderConfiguration.local);
 		if (this.getWorkbenchState() === WorkbenchState.FOLDER) {
-			const workspaceConfigurationChange = this._configuration.compareAndUpdateWorkspaceConfiguration(folderConfiguration);
+			const workspaceConfigurationChange = this._configuration.compareAndUpdateWorkspaceConfiguration(folderConfiguration.shared);
+			const workspaceLocalConfigurationChange = this._configuration.compareAndUpdateWorkspaceLocalConfiguration(folderConfiguration.local);
 			this.triggerConfigurationChange(mergeChanges(folderConfigurationChange, workspaceConfigurationChange), previous, ConfigurationTarget.WORKSPACE);
+			this.triggerConfigurationChange(mergeChanges(folderLocalConfigurationChange, workspaceLocalConfigurationChange), previous, ConfigurationTarget.WORKSPACE_LOCAL);
 		} else {
 			this.triggerConfigurationChange(folderConfigurationChange, previous, ConfigurationTarget.WORKSPACE_FOLDER);
+			this.triggerConfigurationChange(folderLocalConfigurationChange, previous, ConfigurationTarget.WORKSPACE_FOLDER_LOCAL);
 		}
 		this.updateRestrictedSettings();
 	}
@@ -949,6 +1011,7 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 			if (!this.workspace.folders.filter(folder => folder.uri.toString() === key.toString())[0]) {
 				this.cachedFolderConfigs.deleteAndDispose(key);
 				changes.push(this._configuration.compareAndDeleteFolderConfiguration(key));
+				changes.push(this._configuration.compareAndDeleteFolderLocalConfiguration(key));
 			}
 		}
 
@@ -956,13 +1019,14 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 		if (toInitialize.length) {
 			const folderConfigurations = await this.loadFolderConfigurations(toInitialize);
 			folderConfigurations.forEach((folderConfiguration, index) => {
-				changes.push(this._configuration.compareAndUpdateFolderConfiguration(toInitialize[index].uri, folderConfiguration));
+				changes.push(this._configuration.compareAndUpdateFolderConfiguration(toInitialize[index].uri, folderConfiguration.shared));
+				changes.push(this._configuration.compareAndUpdateFolderLocalConfiguration(toInitialize[index].uri, folderConfiguration.local));
 			});
 		}
 		return mergeChanges(...changes);
 	}
 
-	private loadFolderConfigurations(folders: IWorkspaceFolder[]): Promise<ConfigurationModel[]> {
+	private loadFolderConfigurations(folders: IWorkspaceFolder[]): Promise<IWorkspaceConfigurationModels[]> {
 		return Promise.all([...folders.map(folder => {
 			let folderConfiguration = this.cachedFolderConfigs.get(folder.uri);
 			if (!folderConfiguration) {
@@ -970,7 +1034,7 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 				folderConfiguration.addRelated(folderConfiguration.onDidChange(() => this.onWorkspaceFolderConfigurationChanged(folder)));
 				this.cachedFolderConfigs.set(folder.uri, folderConfiguration);
 			}
-			return folderConfiguration.loadConfiguration();
+			return folderConfiguration.loadConfigurationModels();
 		})]);
 	}
 
@@ -978,7 +1042,7 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 		const validWorkspaceFolders = await this.toValidWorkspaceFolders(this.workspace.folders);
 		const { removed } = this.compareFolders(this.workspace.folders, validWorkspaceFolders);
 		if (removed.length) {
-			await this.updateWorkspaceConfiguration(validWorkspaceFolders, this.workspaceConfiguration.getConfiguration(), fromCache);
+			await this.updateWorkspaceConfiguration(validWorkspaceFolders, this.workspaceConfiguration.getConfiguration(), this.workspaceConfiguration.getLocalConfiguration(), fromCache);
 		}
 	}
 
@@ -1050,8 +1114,15 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 			case EditableConfigurationTarget.USER_REMOTE:
 				return this.reloadRemoteUserConfiguration().then(() => undefined);
 			case EditableConfigurationTarget.WORKSPACE:
+			case EditableConfigurationTarget.WORKSPACE_LOCAL:
 				return this.reloadWorkspaceConfiguration();
 			case EditableConfigurationTarget.WORKSPACE_FOLDER: {
+				const workspaceFolder = overrides && overrides.resource ? this.workspace.getFolder(overrides.resource) : null;
+				if (workspaceFolder) {
+					return this.reloadWorkspaceFolderConfiguration(workspaceFolder);
+				}
+			}
+			case EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL: {
 				const workspaceFolder = overrides && overrides.resource ? this.workspace.getFolder(overrides.resource) : null;
 				if (workspaceFolder) {
 					return this.reloadWorkspaceFolderConfiguration(workspaceFolder);
@@ -1070,7 +1141,9 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 			case EditableConfigurationTarget.USER_LOCAL: return this._configuration.localUserConfiguration;
 			case EditableConfigurationTarget.USER_REMOTE: return this._configuration.remoteUserConfiguration;
 			case EditableConfigurationTarget.WORKSPACE: return this._configuration.workspaceConfiguration;
+			case EditableConfigurationTarget.WORKSPACE_LOCAL: return this._configuration.workspaceLocalConfiguration;
 			case EditableConfigurationTarget.WORKSPACE_FOLDER: return resource ? this._configuration.folderConfigurations.get(resource) : undefined;
+			case EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL: return resource ? this._configuration.folderLocalConfigurations.get(resource) : undefined;
 		}
 	}
 
@@ -1079,7 +1152,9 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 			case ConfigurationTarget.USER_LOCAL: return this._configuration.localUserConfiguration;
 			case ConfigurationTarget.USER_REMOTE: return this._configuration.remoteUserConfiguration;
 			case ConfigurationTarget.WORKSPACE: return this._configuration.workspaceConfiguration;
+			case ConfigurationTarget.WORKSPACE_LOCAL: return this._configuration.workspaceLocalConfiguration;
 			case ConfigurationTarget.WORKSPACE_FOLDER: return resource ? this._configuration.folderConfigurations.get(resource) : undefined;
+			case ConfigurationTarget.WORKSPACE_FOLDER_LOCAL: return resource ? this._configuration.folderLocalConfigurations.get(resource) : undefined;
 			default: return undefined;
 		}
 	}
@@ -1093,8 +1168,14 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 		if (inspect.workspaceFolderValue !== undefined) {
 			definedTargets.push(ConfigurationTarget.WORKSPACE_FOLDER);
 		}
+		if (inspect.workspaceFolderLocalValue !== undefined && value === undefined) {
+			definedTargets.push(ConfigurationTarget.WORKSPACE_FOLDER_LOCAL);
+		}
 		if (inspect.workspaceValue !== undefined) {
 			definedTargets.push(ConfigurationTarget.WORKSPACE);
+		}
+		if (inspect.workspaceLocalValue !== undefined && value === undefined) {
+			definedTargets.push(ConfigurationTarget.WORKSPACE_LOCAL);
 		}
 		if (inspect.userRemoteValue !== undefined) {
 			definedTargets.push(ConfigurationTarget.USER_REMOTE);
@@ -1150,8 +1231,14 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 		if (target === ConfigurationTarget.WORKSPACE) {
 			return EditableConfigurationTarget.WORKSPACE;
 		}
+		if (target === ConfigurationTarget.WORKSPACE_LOCAL) {
+			return EditableConfigurationTarget.WORKSPACE_LOCAL;
+		}
 		if (target === ConfigurationTarget.WORKSPACE_FOLDER) {
 			return EditableConfigurationTarget.WORKSPACE_FOLDER;
+		}
+		if (target === ConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
+			return EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL;
 		}
 		return null;
 	}
