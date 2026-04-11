@@ -6,7 +6,6 @@
 import { URI } from '../../../../base/common/uri.js';
 import { Event, Emitter } from '../../../../base/common/event.js';
 import * as errors from '../../../../base/common/errors.js';
-import * as json from '../../../../base/common/json.js';
 import { Disposable, IDisposable, dispose, toDisposable, MutableDisposable, combinedDisposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { RunOnceScheduler } from '../../../../base/common/async.js';
 import { FileChangeType, FileChangesEvent, IFileService, whenProviderRegistered, FileOperationError, FileOperationResult, FileOperation, FileOperationEvent } from '../../../../platform/files/common/files.js';
@@ -31,17 +30,16 @@ import { IUserDataProfilesService } from '../../../../platform/userDataProfile/c
 import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/environmentService.js';
 import { distinct } from '../../../../base/common/arrays.js';
 
-function hasParseErrors(content: string): boolean {
-	const parseErrors: json.ParseError[] = [];
-	json.parse(content, parseErrors, { allowTrailingComma: true, allowEmptyContent: true });
-	return parseErrors.length > 0;
-}
-
 function parseSettingsConfiguration(parser: ConfigurationModelParser, content: string | undefined, options: ConfigurationParseOptions, skipInvalid: boolean = false): void {
-	if (content === undefined || (skipInvalid && hasParseErrors(content))) {
+	if (content === undefined) {
 		parser.parseRaw({}, options);
-	} else {
-		parser.parse(content, options);
+		return;
+	}
+
+	parser.parse(content, options);
+
+	if (skipInvalid && parser.errors.length > 0) {
+		parser.parseRaw({}, options);
 	}
 }
 
