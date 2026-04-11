@@ -293,7 +293,7 @@ class FileServiceBasedConfiguration extends Disposable {
 		}
 	}
 
-	async resolveContents(): Promise<[string | undefined, [string, string | undefined][]]> {
+	async resolveContents(): Promise<[string, [string, string | undefined][]]> {
 
 		const resolveContents = async (resources: URI[]): Promise<string[]> => {
 			return Promise.all(resources.map(async resource => {
@@ -316,7 +316,7 @@ class FileServiceBasedConfiguration extends Disposable {
 		]);
 
 		const [resolvedSettings, resolvedStandAloneConfigurations] = await Promise.all([
-			settingsContent === undefined ? Promise.resolve(undefined) : this.createConfigurationInheritance(this.settingsResource).resolveContent(settingsContent),
+			this.createConfigurationInheritance(this.settingsResource).resolveContent(settingsContent),
 			Promise.all(standAloneConfigurationContents.map((content, index) =>
 				this.createConfigurationInheritance(this.standAloneConfigurationResources[index][1]).resolveContent(content)))
 		]);
@@ -326,14 +326,10 @@ class FileServiceBasedConfiguration extends Disposable {
 		for (const [, resource] of this.standAloneConfigurationResources) {
 			resources.set(resource, resource);
 		}
-		if (resolvedSettings) {
-			for (const resource of resolvedSettings.resources) {
-				resources.set(resource, resource);
-			}
-			this.updateInheritanceDiagnostics(this.settingsResource, resolvedSettings.diagnostics);
-		} else {
-			this.updateInheritanceDiagnostics(this.settingsResource, []);
+		for (const resource of resolvedSettings.resources) {
+			resources.set(resource, resource);
 		}
+		this.updateInheritanceDiagnostics(this.settingsResource, resolvedSettings.diagnostics);
 		resolvedStandAloneConfigurations.forEach((result, index) => {
 			for (const resource of result.resources) {
 				resources.set(resource, resource);
@@ -343,7 +339,7 @@ class FileServiceBasedConfiguration extends Disposable {
 		this.updateWatchedResources([...resources.values()]);
 
 		return [
-			resolvedSettings?.content,
+			resolvedSettings.content,
 			resolvedStandAloneConfigurations.map((result, index) => ([this.standAloneConfigurationResources[index][0], result.content]))
 		];
 	}
@@ -357,9 +353,7 @@ class FileServiceBasedConfiguration extends Disposable {
 		this._folderSettingsModelParser.parse('', this._folderSettingsParseOptions);
 
 		// parse
-		if (settingsContent !== undefined) {
-			this._folderSettingsModelParser.parse(settingsContent, this._folderSettingsParseOptions);
-		}
+		this._folderSettingsModelParser.parse(settingsContent, this._folderSettingsParseOptions);
 		for (let index = 0; index < standAloneConfigurationContents.length; index++) {
 			const contents = standAloneConfigurationContents[index][1];
 			if (contents !== undefined) {
