@@ -28,7 +28,7 @@ import { IRemoteAgentService } from '../../../remote/common/remoteAgentService.j
 import { FileService } from '../../../../../platform/files/common/fileService.js';
 import { NullLogService } from '../../../../../platform/log/common/log.js';
 import { IRemoteAgentEnvironment } from '../../../../../platform/remote/common/remoteAgentEnvironment.js';
-import { APPLY_ALL_PROFILES_SETTING, IConfigurationCache } from '../../common/configuration.js';
+import { APPLY_ALL_PROFILES_SETTING, ConfigurationKey, IConfigurationCache } from '../../common/configuration.js';
 import { SignService } from '../../../../../platform/sign/browser/signService.js';
 import { FileUserDataProvider } from '../../../../../platform/userData/common/fileUserDataProvider.js';
 import { IKeybindingEditingService, KeybindingsEditingService } from '../../../keybinding/common/keybindingEditing.js';
@@ -66,6 +66,37 @@ class ConfigurationCache implements IConfigurationCache {
 	async read(): Promise<string> { return ''; }
 	async write(): Promise<void> { }
 	async remove(): Promise<void> { }
+}
+
+class TestConfigurationCache implements IConfigurationCache {
+
+	private readonly cache = new Map<string, string>();
+
+	needsCaching(resource: URI): boolean { return true; }
+
+	async read(key: ConfigurationKey): Promise<string> {
+		const value = this.cache.get(this.toKey(key));
+		if (value === undefined) {
+			throw new Error(`Missing cache entry for ${this.toKey(key)}`);
+		}
+		return value;
+	}
+
+	async write(key: ConfigurationKey, content: string): Promise<void> {
+		this.cache.set(this.toKey(key), content);
+	}
+
+	async remove(key: ConfigurationKey): Promise<void> {
+		this.cache.delete(this.toKey(key));
+	}
+
+	get(key: ConfigurationKey): string | undefined {
+		return this.cache.get(this.toKey(key));
+	}
+
+	private toKey(key: ConfigurationKey): string {
+		return `${key.type}:${key.key}`;
+	}
 }
 
 const ROOT = URI.file('tests').with({ scheme: 'vscode-tests' });
@@ -886,6 +917,73 @@ suite('WorkspaceConfigurationService - Folder', () => {
 		assert.strictEqual(testObject.getValue('configurationService.folder.testSetting'), 'workspaceValue');
 	}));
 
+	test('Local Workspace settings override shared settings', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const settingsResource = joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode', 'settings.json');
+		const localSettingsResource = joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode', 'settings.local.json');
+
+		await fileService.writeFile(settingsResource, VSBuffer.fromString('{ "configurationService.folder.testSetting": "workspaceValue", "configurationService.folder.machineOverridableSetting": "sharedOnlyValue" }'));
+		await fileService.writeFile(localSettingsResource, VSBuffer.fromString('{ "configurationService.folder.testSetting": "localValue" }'));
+		await testObject.reloadConfiguration();
+
+		assert.strictEqual(testObject.getValue('configurationService.folder.testSetting'), 'localValue');
+		assert.strictEqual(testObject.getValue('configurationService.folder.machineOverridableSetting'), 'sharedOnlyValue');
+	}));
+
+	test('creating Local Workspace settings', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+		await fileService.writeFile(userDataProfileService.currentProfile.settingsResource, VSBuffer.fromString('{ "configurationService.folder.testSetting": "userValue" }'));
+		await fileService.writeFile(joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode', 'settings.json'), VSBuffer.fromString('{ "configurationService.folder.testSetting": "workspaceValue" }'));
+		await testObject.reloadConfiguration();
+		await new Promise<void>((c, e) => {
+			const disposable = testObject.onDidChangeConfiguration(event => {
+				assert.ok(event.affectsConfiguration('configurationService.folder.testSetting'));
+				assert.strictEqual(testObject.getValue('configurationService.folder.testSetting'), 'localValue');
+				disposable.dispose();
+				c();
+			});
+			fileService.writeFile(joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode', 'settings.local.json'), VSBuffer.fromString('{ "configurationService.folder.testSetting": "localValue" }')).catch(e);
+		});
+	}));
+
+	test('deleting Local Workspace settings', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+		const localSettingsResource = joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode', 'settings.local.json');
+
+		await fileService.writeFile(userDataProfileService.currentProfile.settingsResource, VSBuffer.fromString('{ "configurationService.folder.testSetting": "userValue" }'));
+		await fileService.writeFile(joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode', 'settings.json'), VSBuffer.fromString('{ "configurationService.folder.testSetting": "workspaceValue" }'));
+		await fileService.writeFile(localSettingsResource, VSBuffer.fromString('{ "configurationService.folder.testSetting": "localValue" }'));
+		await testObject.reloadConfiguration();
+
+		const event = await new Promise<IConfigurationChangeEvent>((c, e) => {
+			Event.once(testObject.onDidChangeConfiguration)(c);
+			fileService.del(localSettingsResource).catch(e);
+		});
+		assert.ok(event.affectsConfiguration('configurationService.folder.testSetting'));
+		assert.strictEqual(testObject.getValue('configurationService.folder.testSetting'), 'workspaceValue');
+	}));
+
+	test('deleting the .vscode folder removes Local Workspace settings', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+		const configurationFolder = joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode');
+
+		await fileService.writeFile(userDataProfileService.currentProfile.settingsResource, VSBuffer.fromString('{ "configurationService.folder.testSetting": "userValue" }'));
+		await fileService.writeFile(joinPath(configurationFolder, 'settings.json'), VSBuffer.fromString('{ "configurationService.folder.testSetting": "workspaceValue" }'));
+		await fileService.writeFile(joinPath(configurationFolder, 'settings.local.json'), VSBuffer.fromString('{ "configurationService.folder.testSetting": "localValue" }'));
+		await testObject.reloadConfiguration();
+
+		const event = await new Promise<IConfigurationChangeEvent>((c, e) => {
+			Event.once(testObject.onDidChangeConfiguration)(c);
+			fileService.del(configurationFolder, { recursive: true }).catch(e);
+		});
+		assert.ok(event.affectsConfiguration('configurationService.folder.testSetting'));
+		assert.strictEqual(testObject.getValue('configurationService.folder.testSetting'), 'userValue');
+	}));
+
+	test('invalid Local Workspace settings are ignored', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		await fileService.writeFile(joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode', 'settings.json'), VSBuffer.fromString('{ "configurationService.folder.testSetting": "workspaceValue" }'));
+		await fileService.writeFile(joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode', 'settings.local.json'), VSBuffer.fromString('{ "configurationService.folder.testSetting": "localValue",'));
+		await testObject.reloadConfiguration();
+
+		assert.strictEqual(testObject.getValue('configurationService.folder.testSetting'), 'workspaceValue');
+	}));
+
 	test('machine overridable settings override user Settings', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
 		await fileService.writeFile(userDataProfileService.currentProfile.settingsResource, VSBuffer.fromString('{ "configurationService.folder.machineOverridableSetting": "userValue" }'));
 		await fileService.writeFile(joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode', 'settings.json'), VSBuffer.fromString('{ "configurationService.folder.machineOverridableSetting": "workspaceValue" }'));
@@ -1560,6 +1658,70 @@ suite('WorkspaceConfigurationService - Folder', () => {
 		assert.strictEqual(testObject.getValue('configurationService.folder.testSetting'), 'userValue');
 	}));
 
+	test('restricted setting from Local Workspace settings obeys workspace trust', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		testObject.updateWorkspaceTrust(false);
+
+		await fileService.writeFile(userDataProfileService.currentProfile.settingsResource, VSBuffer.fromString('{ "configurationService.folder.restrictedSetting": "userValue" }'));
+		await fileService.writeFile(joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode', 'settings.local.json'), VSBuffer.fromString('{ "configurationService.folder.restrictedSetting": "localValue" }'));
+		await testObject.reloadConfiguration();
+
+		assert.strictEqual(testObject.getValue('configurationService.folder.restrictedSetting', { resource: workspaceService.getWorkspace().folders[0].uri }), 'userValue');
+
+		testObject.updateWorkspaceTrust(true);
+		await testObject.reloadConfiguration();
+		assert.strictEqual(testObject.getValue('configurationService.folder.restrictedSetting', { resource: workspaceService.getWorkspace().folders[0].uri }), 'localValue');
+	}));
+
+	test('Local Workspace settings are restored from folder cache', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const configurationCache = new TestConfigurationCache();
+		const cacheScheme = 'vscode-tests-cache';
+		const cachedFolder = URI.from({ scheme: cacheScheme, path: '/folder' });
+		const folderCacheKey: ConfigurationKey = { type: 'folder', key: hash(joinPath(cachedFolder, '.vscode').toString()).toString(16) };
+		const logService = new NullLogService();
+
+		const sourceFileService = disposables.add(new FileService(logService));
+		const sourceRootProvider = disposables.add(new InMemoryFileSystemProvider());
+		const sourceCacheProvider = disposables.add(new InMemoryFileSystemProvider());
+		disposables.add(sourceFileService.registerProvider(ROOT.scheme, sourceRootProvider));
+		disposables.add(sourceFileService.registerProvider(cacheScheme, sourceCacheProvider));
+		const sourceUriIdentityService = disposables.add(new UriIdentityService(sourceFileService));
+		const sourceEnvironmentService = TestEnvironmentService;
+		const sourceUserDataProfilesService = disposables.add(new UserDataProfilesService(sourceEnvironmentService, sourceFileService, sourceUriIdentityService, logService));
+		disposables.add(sourceFileService.registerProvider(Schemas.vscodeUserData, disposables.add(new FileUserDataProvider(ROOT.scheme, sourceRootProvider, Schemas.vscodeUserData, sourceUserDataProfilesService, sourceUriIdentityService, new NullLogService()))));
+		const sourceUserDataProfileService = disposables.add(new UserDataProfileService(sourceUserDataProfilesService.defaultProfile));
+		const sourceRemoteAgentService = disposables.add(new RemoteAgentService(new RemoteSocketFactoryService(), sourceUserDataProfileService, sourceEnvironmentService, TestProductService, disposables.add(new RemoteAuthorityResolverService(false, undefined, undefined, undefined, TestProductService, logService)), new SignService(TestProductService), new NullLogService()));
+		const sourceWorkspaceService = disposables.add(new WorkspaceService({ configurationCache }, sourceEnvironmentService, sourceUserDataProfileService, sourceUserDataProfilesService, sourceFileService, sourceRemoteAgentService, sourceUriIdentityService, new NullLogService(), new NullPolicyService()));
+
+		await sourceFileService.createFolder(cachedFolder);
+		await sourceFileService.writeFile(joinPath(cachedFolder, '.vscode', 'settings.json'), VSBuffer.fromString('{ "configurationService.folder.testSetting": "workspaceValue" }'));
+		await sourceFileService.writeFile(joinPath(cachedFolder, '.vscode', 'settings.local.json'), VSBuffer.fromString('{ "configurationService.folder.testSetting": "localValue" }'));
+		await sourceWorkspaceService.initialize(convertToWorkspacePayload(cachedFolder));
+		await sourceWorkspaceService.reloadConfiguration();
+		await timeout(0);
+
+		assert.strictEqual(sourceWorkspaceService.getValue('configurationService.folder.testSetting'), 'localValue');
+
+		const cachedPayload = configurationCache.get(folderCacheKey);
+		assert.ok(cachedPayload);
+		assert.strictEqual(JSON.parse(cachedPayload!).content['settings.local'], '{ "configurationService.folder.testSetting": "localValue" }');
+
+		const cachedFileService = disposables.add(new FileService(logService));
+		const cachedRootProvider = disposables.add(new InMemoryFileSystemProvider());
+		const cachedCacheProvider = disposables.add(new InMemoryFileSystemProvider());
+		disposables.add(cachedFileService.registerProvider(ROOT.scheme, cachedRootProvider));
+		disposables.add(cachedFileService.registerProvider(cacheScheme, cachedCacheProvider));
+		const cachedUriIdentityService = disposables.add(new UriIdentityService(cachedFileService));
+		const cachedEnvironmentService = TestEnvironmentService;
+		const cachedUserDataProfilesService = disposables.add(new UserDataProfilesService(cachedEnvironmentService, cachedFileService, cachedUriIdentityService, logService));
+		disposables.add(cachedFileService.registerProvider(Schemas.vscodeUserData, disposables.add(new FileUserDataProvider(ROOT.scheme, cachedRootProvider, Schemas.vscodeUserData, cachedUserDataProfilesService, cachedUriIdentityService, new NullLogService()))));
+		const cachedUserDataProfileService = disposables.add(new UserDataProfileService(cachedUserDataProfilesService.defaultProfile));
+		const cachedRemoteAgentService = disposables.add(new RemoteAgentService(new RemoteSocketFactoryService(), cachedUserDataProfileService, cachedEnvironmentService, TestProductService, disposables.add(new RemoteAuthorityResolverService(false, undefined, undefined, undefined, TestProductService, logService)), new SignService(TestProductService), new NullLogService()));
+		const cachedWorkspaceService = disposables.add(new WorkspaceService({ configurationCache }, cachedEnvironmentService, cachedUserDataProfileService, cachedUserDataProfilesService, cachedFileService, cachedRemoteAgentService, cachedUriIdentityService, new NullLogService(), new NullPolicyService()));
+
+		await cachedWorkspaceService.initialize(convertToWorkspacePayload(cachedFolder));
+		assert.strictEqual(cachedWorkspaceService.getValue('configurationService.folder.testSetting'), 'localValue');
+	}));
+
 	test('restricted setting is read from workspace when workspace is trusted', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
 		testObject.updateWorkspaceTrust(true);
 
@@ -2133,6 +2295,15 @@ suite('WorkspaceConfigurationService-Multiroot', () => {
 		workspaceContextService = workspaceService;
 		testObject = workspaceService;
 	});
+
+	test('Local Workspace settings in a workspace folder override shared settings', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		await fileService.writeFile(workspaceContextService.getWorkspace().folders[0].toResource('.vscode/settings.json'), VSBuffer.fromString('{ "configurationService.workspace.testResourceSetting": "workspaceFolderValue", "configurationService.workspace.testLanguageSetting": "sharedOnlyValue" }'));
+		await fileService.writeFile(workspaceContextService.getWorkspace().folders[0].toResource('.vscode/settings.local.json'), VSBuffer.fromString('{ "configurationService.workspace.testResourceSetting": "localValue" }'));
+		await testObject.reloadConfiguration();
+
+		assert.strictEqual(testObject.getValue('configurationService.workspace.testResourceSetting', { resource: workspaceContextService.getWorkspace().folders[0].uri }), 'localValue');
+		assert.strictEqual(testObject.getValue('configurationService.workspace.testLanguageSetting', { resource: workspaceContextService.getWorkspace().folders[0].uri }), 'sharedOnlyValue');
+	}));
 
 	test('application settings are not read from workspace', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
 		await fileService.writeFile(userDataProfileService.currentProfile.settingsResource, VSBuffer.fromString('{ "configurationService.workspace.applicationSetting": "userValue" }'));

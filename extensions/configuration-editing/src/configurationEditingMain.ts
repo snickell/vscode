@@ -30,7 +30,10 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 function registerSettingsCompletions(): vscode.Disposable {
-	return vscode.languages.registerCompletionItemProvider({ language: 'jsonc', pattern: '**/settings.json' }, {
+	return vscode.languages.registerCompletionItemProvider([
+		{ language: 'jsonc', pattern: '**/settings.json' },
+		{ language: 'jsonc', pattern: '**/.vscode/settings.local.json' }
+	], {
 		provideCompletionItems(document, position, token) {
 			return new SettingsDocument(document).provideCompletionItems(position, token);
 		}

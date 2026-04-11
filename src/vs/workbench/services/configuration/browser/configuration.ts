@@ -11,7 +11,7 @@ import { RunOnceScheduler } from '../../../../base/common/async.js';
 import { FileChangeType, FileChangesEvent, IFileService, whenProviderRegistered, FileOperationError, FileOperationResult, FileOperation, FileOperationEvent } from '../../../../platform/files/common/files.js';
 import { ConfigurationModel, ConfigurationModelParser, ConfigurationParseOptions, UserSettings } from '../../../../platform/configuration/common/configurationModels.js';
 import { WorkspaceConfigurationModelParser, StandaloneConfigurationModelParser } from '../common/configurationModels.js';
-import { TASKS_CONFIGURATION_KEY, FOLDER_SETTINGS_NAME, LAUNCH_CONFIGURATION_KEY, IConfigurationCache, ConfigurationKey, REMOTE_MACHINE_SCOPES, FOLDER_SCOPES, WORKSPACE_SCOPES, APPLY_ALL_PROFILES_SETTING, APPLICATION_SCOPES, MCP_CONFIGURATION_KEY } from '../common/configuration.js';
+import { TASKS_CONFIGURATION_KEY, FOLDER_SETTINGS_NAME, FOLDER_SETTINGS_LOCAL_NAME, LAUNCH_CONFIGURATION_KEY, IConfigurationCache, ConfigurationKey, REMOTE_MACHINE_SCOPES, FOLDER_SCOPES, WORKSPACE_SCOPES, APPLY_ALL_PROFILES_SETTING, APPLICATION_SCOPES, MCP_CONFIGURATION_KEY } from '../common/configuration.js';
 import { IStoredWorkspaceFolder } from '../../../../platform/workspaces/common/workspaces.js';
 import { WorkbenchState, IWorkspaceFolder, IWorkspaceIdentifier } from '../../../../platform/workspace/common/workspace.js';
 import { ConfigurationScope, Extensions, IConfigurationRegistry, OVERRIDE_PROPERTY_REGEX } from '../../../../platform/configuration/common/configurationRegistry.js';
@@ -28,6 +28,20 @@ import { DefaultConfiguration as BaseDefaultConfiguration } from '../../../../pl
 import { IJSONEditingService } from '../common/jsonEditing.js';
 import { IUserDataProfilesService } from '../../../../platform/userDataProfile/common/userDataProfile.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/environmentService.js';
+import { distinct } from '../../../../base/common/arrays.js';
+
+function parseSettingsConfiguration(parser: ConfigurationModelParser, content: string | undefined, options: ConfigurationParseOptions, skipInvalid: boolean = false): void {
+	if (content === undefined) {
+		parser.parseRaw({}, options);
+		return;
+	}
+
+	parser.parse(content, options);
+
+	if (skipInvalid && parser.errors.length > 0) {
+		parser.parseRaw({}, options);
+	}
+}
 
 export class DefaultConfiguration extends BaseDefaultConfiguration {
 
@@ -201,7 +215,7 @@ export class UserConfiguration extends Disposable {
 		if (this.mcpResource) {
 			standAloneConfigurationResources.push([MCP_CONFIGURATION_KEY, this.mcpResource]);
 		}
-		const fileServiceBasedConfiguration = new FileServiceBasedConfiguration(folder.toString(), this.settingsResource, standAloneConfigurationResources, this.configurationParseOptions, this.fileService, this.uriIdentityService, this.logService);
+		const fileServiceBasedConfiguration = new FileServiceBasedConfiguration(folder.toString(), this.settingsResource, undefined, standAloneConfigurationResources, this.configurationParseOptions, this.fileService, this.uriIdentityService, this.logService);
 		const configurationModel = await fileServiceBasedConfiguration.loadConfiguration(settingsConfiguration);
 		this.userConfiguration.value = fileServiceBasedConfiguration;
 
@@ -238,6 +252,7 @@ class FileServiceBasedConfiguration extends Disposable {
 
 	private readonly allResources: URI[];
 	private _folderSettingsModelParser: ConfigurationModelParser;
+	private _localFolderSettingsModelParser: ConfigurationModelParser;
 	private _folderSettingsParseOptions: ConfigurationParseOptions;
 	private _standAloneConfigurations: ConfigurationModel[];
 	private _cache: ConfigurationModel;
@@ -248,6 +263,7 @@ class FileServiceBasedConfiguration extends Disposable {
 	constructor(
 		name: string,
 		private readonly settingsResource: URI,
+		private readonly localSettingsResource: URI | undefined,
 		private readonly standAloneConfigurationResources: [string, URI][],
 		configurationParseOptions: ConfigurationParseOptions,
 		private readonly fileService: IFileService,
@@ -255,7 +271,11 @@ class FileServiceBasedConfiguration extends Disposable {
 		private readonly logService: ILogService,
 	) {
 		super();
-		this.allResources = [this.settingsResource, ...this.standAloneConfigurationResources.map(([, resource]) => resource)];
+		this.allResources = [
+			this.settingsResource,
+			...(this.localSettingsResource ? [this.localSettingsResource] : []),
+			...this.standAloneConfigurationResources.map(([, resource]) => resource)
+		];
 		this._register(combinedDisposable(...this.allResources.map(resource => combinedDisposable(
 			this.fileService.watch(uriIdentityService.extUri.dirname(resource)),
 			// Also listen to the resource incase the resource is a symlink - https://github.com/microsoft/vscode/issues/118134
@@ -263,6 +283,7 @@ class FileServiceBasedConfiguration extends Disposable {
 		))));
 
 		this._folderSettingsModelParser = new ConfigurationModelParser(name, logService);
+		this._localFolderSettingsModelParser = new ConfigurationModelParser(this.localSettingsResource?.toString() ?? `${name}:${FOLDER_SETTINGS_LOCAL_NAME}`, logService);
 		this._folderSettingsParseOptions = configurationParseOptions;
 		this._standAloneConfigurations = [];
 		this._cache = ConfigurationModel.createEmptyModel(this.logService);
@@ -274,7 +295,7 @@ class FileServiceBasedConfiguration extends Disposable {
 			), () => undefined, 100)(() => this._onDidChange.fire()));
 	}
 
-	async resolveContents(donotResolveSettings?: boolean): Promise<[string | undefined, [string, string | undefined][]]> {
+	async resolveContents(donotResolveSettings?: boolean): Promise<[string | undefined, string | undefined, [string, string | undefined][]]> {
 
 		const resolveContents = async (resources: URI[]): Promise<(string | undefined)[]> => {
 			return Promise.all(resources.map(async resource => {
@@ -292,26 +313,44 @@ class FileServiceBasedConfiguration extends Disposable {
 			}));
 		};
 
-		const [[settingsContent], standAloneConfigurationContents] = await Promise.all([
+		const resolveOptionalContent = async (resource: URI | undefined): Promise<string | undefined> => {
+			if (!resource) {
+				return undefined;
+			}
+			try {
+				const content = await this.fileService.readFile(resource, { atomic: true });
+				return content.value.toString();
+			} catch (error) {
+				this.logService.trace(`Error while resolving configuration file '${resource.toString()}': ${errors.getErrorMessage(error)}`);
+				if ((<FileOperationError>error).fileOperationResult !== FileOperationResult.FILE_NOT_FOUND
+					&& (<FileOperationError>error).fileOperationResult !== FileOperationResult.FILE_NOT_DIRECTORY) {
+					this.logService.error(error);
+				}
+			}
+			return undefined;
+		};
+
+		const [[settingsContent], localSettingsContent, standAloneConfigurationContents] = await Promise.all([
 			donotResolveSettings ? Promise.resolve([undefined]) : resolveContents([this.settingsResource]),
+			resolveOptionalContent(this.localSettingsResource),
 			resolveContents(this.standAloneConfigurationResources.map(([, resource]) => resource)),
 		]);
 
-		return [settingsContent, standAloneConfigurationContents.map((content, index) => ([this.standAloneConfigurationResources[index][0], content]))];
+		return [settingsContent, localSettingsContent, standAloneConfigurationContents.map((content, index) => ([this.standAloneConfigurationResources[index][0], content]))];
 	}
 
 	async loadConfiguration(settingsConfiguration?: ConfigurationModel): Promise<ConfigurationModel> {
 
-		const [settingsContent, standAloneConfigurationContents] = await this.resolveContents(!!settingsConfiguration);
+		const [settingsContent, localSettingsContent, standAloneConfigurationContents] = await this.resolveContents(!!settingsConfiguration);
 
 		// reset
 		this._standAloneConfigurations = [];
-		this._folderSettingsModelParser.parse('', this._folderSettingsParseOptions);
+		parseSettingsConfiguration(this._folderSettingsModelParser, undefined, this._folderSettingsParseOptions);
+		parseSettingsConfiguration(this._localFolderSettingsModelParser, undefined, this._folderSettingsParseOptions);
 
 		// parse
-		if (settingsContent !== undefined) {
-			this._folderSettingsModelParser.parse(settingsContent, this._folderSettingsParseOptions);
-		}
+		parseSettingsConfiguration(this._folderSettingsModelParser, settingsContent, this._folderSettingsParseOptions);
+		parseSettingsConfiguration(this._localFolderSettingsModelParser, localSettingsContent, this._folderSettingsParseOptions, true);
 		for (let index = 0; index < standAloneConfigurationContents.length; index++) {
 			const contents = standAloneConfigurationContents[index][1];
 			if (contents !== undefined) {
@@ -328,21 +367,24 @@ class FileServiceBasedConfiguration extends Disposable {
 	}
 
 	getRestrictedSettings(): string[] {
-		return this._folderSettingsModelParser.restrictedConfigurations;
+		return distinct([...this._folderSettingsModelParser.restrictedConfigurations, ...this._localFolderSettingsModelParser.restrictedConfigurations]);
 	}
 
 	reparse(configurationParseOptions: ConfigurationParseOptions): ConfigurationModel {
 		const oldContents = this._folderSettingsModelParser.configurationModel.contents;
+		const oldLocalContents = this._localFolderSettingsModelParser.configurationModel.contents;
 		this._folderSettingsParseOptions = configurationParseOptions;
 		this._folderSettingsModelParser.reparse(this._folderSettingsParseOptions);
-		if (!equals(oldContents, this._folderSettingsModelParser.configurationModel.contents)) {
+		this._localFolderSettingsModelParser.reparse(this._folderSettingsParseOptions);
+		if (!equals(oldContents, this._folderSettingsModelParser.configurationModel.contents)
+			|| !equals(oldLocalContents, this._localFolderSettingsModelParser.configurationModel.contents)) {
 			this.consolidate();
 		}
 		return this._cache;
 	}
 
 	private consolidate(settingsConfiguration?: ConfigurationModel): void {
-		this._cache = (settingsConfiguration ?? this._folderSettingsModelParser.configurationModel).merge(...this._standAloneConfigurations);
+		this._cache = (settingsConfiguration ?? this._folderSettingsModelParser.configurationModel).merge(this._localFolderSettingsModelParser.configurationModel, ...this._standAloneConfigurations);
 	}
 
 	private handleFileChangesEvent(event: FileChangesEvent): boolean {
@@ -935,6 +977,7 @@ class CachedFolderConfiguration {
 	readonly onDidChange = Event.None;
 
 	private _folderSettingsModelParser: ConfigurationModelParser;
+	private _localFolderSettingsModelParser: ConfigurationModelParser;
 	private _folderSettingsParseOptions: ConfigurationParseOptions;
 	private _standAloneConfigurations: ConfigurationModel[];
 	private configurationModel: ConfigurationModel;
@@ -949,6 +992,7 @@ class CachedFolderConfiguration {
 	) {
 		this.key = { type: 'folder', key: hash(joinPath(folder, configFolderRelativePath).toString()).toString(16) };
 		this._folderSettingsModelParser = new ConfigurationModelParser('CachedFolderConfiguration', logService);
+		this._localFolderSettingsModelParser = new ConfigurationModelParser(`${FOLDER_SETTINGS_LOCAL_NAME}:CachedFolderConfiguration`, logService);
 		this._folderSettingsParseOptions = configurationParseOptions;
 		this._standAloneConfigurations = [];
 		this.configurationModel = ConfigurationModel.createEmptyModel(logService);
@@ -956,12 +1000,17 @@ class CachedFolderConfiguration {
 
 	async loadConfiguration(): Promise<ConfigurationModel> {
 		try {
+			this._standAloneConfigurations = [];
+			parseSettingsConfiguration(this._folderSettingsModelParser, undefined, this._folderSettingsParseOptions);
+			parseSettingsConfiguration(this._localFolderSettingsModelParser, undefined, this._folderSettingsParseOptions);
 			const contents = await this.configurationCache.read(this.key);
 			const { content: configurationContents }: { content: IStringDictionary<string> } = JSON.parse(contents.toString());
 			if (configurationContents) {
 				for (const key of Object.keys(configurationContents)) {
 					if (key === FOLDER_SETTINGS_NAME) {
-						this._folderSettingsModelParser.parse(configurationContents[key], this._folderSettingsParseOptions);
+						parseSettingsConfiguration(this._folderSettingsModelParser, configurationContents[key], this._folderSettingsParseOptions);
+					} else if (key === FOLDER_SETTINGS_LOCAL_NAME) {
+						parseSettingsConfiguration(this._localFolderSettingsModelParser, configurationContents[key], this._folderSettingsParseOptions, true);
 					} else {
 						const standAloneConfigurationModelParser = new StandaloneConfigurationModelParser(key, key, this.logService);
 						standAloneConfigurationModelParser.parse(configurationContents[key]);
@@ -975,10 +1024,13 @@ class CachedFolderConfiguration {
 		return this.configurationModel;
 	}
 
-	async updateConfiguration(settingsContent: string | undefined, standAloneConfigurationContents: [string, string | undefined][]): Promise<void> {
+	async updateConfiguration(settingsContent: string | undefined, localSettingsContent: string | undefined, standAloneConfigurationContents: [string, string | undefined][]): Promise<void> {
 		const content: IStringDictionary<unknown> = {};
 		if (settingsContent) {
 			content[FOLDER_SETTINGS_NAME] = settingsContent;
+		}
+		if (localSettingsContent) {
+			content[FOLDER_SETTINGS_LOCAL_NAME] = localSettingsContent;
 		}
 		standAloneConfigurationContents.forEach(([key, contents]) => {
 			if (contents) {
@@ -993,18 +1045,19 @@ class CachedFolderConfiguration {
 	}
 
 	getRestrictedSettings(): string[] {
-		return this._folderSettingsModelParser.restrictedConfigurations;
+		return distinct([...this._folderSettingsModelParser.restrictedConfigurations, ...this._localFolderSettingsModelParser.restrictedConfigurations]);
 	}
 
 	reparse(configurationParseOptions: ConfigurationParseOptions): ConfigurationModel {
 		this._folderSettingsParseOptions = configurationParseOptions;
 		this._folderSettingsModelParser.reparse(this._folderSettingsParseOptions);
+		this._localFolderSettingsModelParser.reparse(this._folderSettingsParseOptions);
 		this.consolidate();
 		return this.configurationModel;
 	}
 
 	private consolidate(): void {
-		this.configurationModel = this._folderSettingsModelParser.configurationModel.merge(...this._standAloneConfigurations);
+		this.configurationModel = this._folderSettingsModelParser.configurationModel.merge(this._localFolderSettingsModelParser.configurationModel, ...this._standAloneConfigurations);
 	}
 
 	getUnsupportedKeys(): string[] {
@@ -1082,14 +1135,15 @@ export class FolderConfiguration extends Disposable {
 
 	private createFileServiceBasedConfiguration(fileService: IFileService, uriIdentityService: IUriIdentityService, logService: ILogService) {
 		const settingsResource = uriIdentityService.extUri.joinPath(this.configurationFolder, `${FOLDER_SETTINGS_NAME}.json`);
+		const localSettingsResource = uriIdentityService.extUri.joinPath(this.configurationFolder, `${FOLDER_SETTINGS_LOCAL_NAME}.json`);
 		const standAloneConfigurationResources: [string, URI][] = [TASKS_CONFIGURATION_KEY, LAUNCH_CONFIGURATION_KEY, MCP_CONFIGURATION_KEY].map(name => ([name, uriIdentityService.extUri.joinPath(this.configurationFolder, `${name}.json`)]));
-		return new FileServiceBasedConfiguration(this.configurationFolder.toString(), settingsResource, standAloneConfigurationResources, { scopes: this.scopes, skipRestricted: this.isUntrusted() }, fileService, uriIdentityService, logService);
+		return new FileServiceBasedConfiguration(this.configurationFolder.toString(), settingsResource, localSettingsResource, standAloneConfigurationResources, { scopes: this.scopes, skipRestricted: this.isUntrusted() }, fileService, uriIdentityService, logService);
 	}
 
 	private async updateCache(): Promise<void> {
 		if (this.configurationCache.needsCaching(this.configurationFolder) && this.folderConfiguration instanceof FileServiceBasedConfiguration) {
-			const [settingsContent, standAloneConfigurationContents] = await this.folderConfiguration.resolveContents();
-			this.cachedFolderConfiguration.updateConfiguration(settingsContent, standAloneConfigurationContents);
+			const [settingsContent, localSettingsContent, standAloneConfigurationContents] = await this.folderConfiguration.resolveContents();
+			this.cachedFolderConfiguration.updateConfiguration(settingsContent, localSettingsContent, standAloneConfigurationContents);
 		}
 	}
 

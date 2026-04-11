@@ -62,6 +62,9 @@
           "profiles.json",
           "devcontainer.json",
           ".devcontainer.json"
+        ],
+        "filenamePatterns": [
+          "/.vscode/settings.local.json"
         ]
       },
       {
@@ -114,6 +117,10 @@
       },
       {
         "fileMatch": "/.vscode/settings.json",
+        "url": "vscode://schemas/settings/folder"
+      },
+      {
+        "fileMatch": "/.vscode/settings.local.json",
         "url": "vscode://schemas/settings/folder"
       },
       {
