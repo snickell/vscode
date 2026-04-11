@@ -6,6 +6,15 @@
 import { localize } from '../../../../nls.js';
 import { IJSONSchema } from '../../../../base/common/jsonSchema.js';
 import { EXTENSION_IDENTIFIER_PATTERN } from '../../../../platform/extensionManagement/common/extensionManagement.js';
+import { CONFIGURATION_INHERITANCE_KEY } from '../../../services/configuration/common/configuration.js';
+
+const extensionsInheritanceProperty: IJSONSchema = {
+	type: ['string', 'array'],
+	items: {
+		type: 'string'
+	},
+	markdownDescription: localize('app.extensions.json.extends', "Inherit from one or more JSON files, resolved relative to this file, before applying this file's own values.")
+};
 
 export const ExtensionsConfigurationSchemaId = 'vscode://schemas/extensions';
 export const ExtensionsConfigurationSchema: IJSONSchema = {
@@ -16,6 +25,7 @@ export const ExtensionsConfigurationSchema: IJSONSchema = {
 	title: localize('app.extensions.json.title', "Extensions"),
 	additionalProperties: false,
 	properties: {
+		[CONFIGURATION_INHERITANCE_KEY]: extensionsInheritanceProperty,
 		recommendations: {
 			type: 'array',
 			description: localize('app.extensions.json.recommendations', "List of extensions which should be recommended for users of this workspace. The identifier of an extension is always '${publisher}.${name}'. For example: 'vscode.csharp'."),

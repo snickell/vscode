@@ -28,7 +28,7 @@ import { IRemoteAgentService } from '../../../remote/common/remoteAgentService.j
 import { FileService } from '../../../../../platform/files/common/fileService.js';
 import { NullLogService } from '../../../../../platform/log/common/log.js';
 import { IRemoteAgentEnvironment } from '../../../../../platform/remote/common/remoteAgentEnvironment.js';
-import { APPLY_ALL_PROFILES_SETTING, IConfigurationCache } from '../../common/configuration.js';
+import { APPLY_ALL_PROFILES_SETTING, ConfigurationKey, IConfigurationCache } from '../../common/configuration.js';
 import { SignService } from '../../../../../platform/sign/browser/signService.js';
 import { FileUserDataProvider } from '../../../../../platform/userData/common/fileUserDataProvider.js';
 import { IKeybindingEditingService, KeybindingsEditingService } from '../../../keybinding/common/keybindingEditing.js';
@@ -53,6 +53,8 @@ import { TasksSchemaProperties } from '../../../../contrib/tasks/common/tasks.js
 import { RemoteSocketFactoryService } from '../../../../../platform/remote/common/remoteSocketFactoryService.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { PolicyCategory } from '../../../../../base/common/policy.js';
+import { IMarkerService } from '../../../../../platform/markers/common/markers.js';
+import { MarkerService } from '../../../../../platform/markers/common/markerService.js';
 
 function convertToWorkspacePayload(folder: URI): ISingleFolderWorkspaceIdentifier {
 	return {
@@ -62,10 +64,18 @@ function convertToWorkspacePayload(folder: URI): ISingleFolderWorkspaceIdentifie
 }
 
 class ConfigurationCache implements IConfigurationCache {
-	needsCaching(resource: URI): boolean { return false; }
-	async read(): Promise<string> { return ''; }
-	async write(): Promise<void> { }
-	async remove(): Promise<void> { }
+	private readonly contents = new Map<string, string>();
+
+	constructor(private readonly cacheResources: boolean = false) { }
+
+	needsCaching(resource: URI): boolean { return this.cacheResources; }
+	async read(key: ConfigurationKey): Promise<string> { return this.contents.get(this.serializeKey(key)) ?? ''; }
+	async write(key: ConfigurationKey, content: string): Promise<void> { this.contents.set(this.serializeKey(key), content); }
+	async remove(key: ConfigurationKey): Promise<void> { this.contents.delete(this.serializeKey(key)); }
+
+	private serializeKey(key: ConfigurationKey): string {
+		return `${key.type}:${key.key}`;
+	}
 }
 
 const ROOT = URI.file('tests').with({ scheme: 'vscode-tests' });
@@ -827,6 +837,7 @@ suite('WorkspaceConfigurationService - Folder', () => {
 		const userDataProfilesService = instantiationService.stub(IUserDataProfilesService, disposables.add(new UserDataProfilesService(environmentService, fileService, uriIdentityService, logService)));
 		disposables.add(fileService.registerProvider(Schemas.vscodeUserData, disposables.add(new FileUserDataProvider(ROOT.scheme, fileSystemProvider, Schemas.vscodeUserData, userDataProfilesService, uriIdentityService, new NullLogService()))));
 		userDataProfileService = instantiationService.stub(IUserDataProfileService, disposables.add(new UserDataProfileService(userDataProfilesService.defaultProfile)));
+		instantiationService.stub(IMarkerService, disposables.add(new MarkerService()));
 		workspaceService = testObject = disposables.add(new WorkspaceService(
 			{ configurationCache: new ConfigurationCache() },
 			environmentService, userDataProfileService, userDataProfilesService,
@@ -877,6 +888,105 @@ suite('WorkspaceConfigurationService - Folder', () => {
 		await fileService.writeFile(joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode', 'settings.json'), VSBuffer.fromString('{ "testworkbench.editor.icons": true }'));
 		await testObject.reloadConfiguration();
 		assert.strictEqual(testObject.getValue('testworkbench.editor.icons'), true);
+	}));
+
+	test('user settings inherit and let the base file win', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const userSettingsFolder = dirname(userDataProfileService.currentProfile.settingsResource);
+		await fileService.writeFile(joinPath(userSettingsFolder, 'settings.shared.json'), VSBuffer.fromString('{ "configurationService.folder.testSetting": "sharedValue", "configurationService.folder.machineOverridableSetting": "sharedMachineValue" }'));
+		await fileService.writeFile(userDataProfileService.currentProfile.settingsResource, VSBuffer.fromString('{ "extends": "./settings.shared.json", "configurationService.folder.machineOverridableSetting": "baseMachineValue" }'));
+		await testObject.reloadConfiguration();
+
+		assert.strictEqual(testObject.getValue('configurationService.folder.testSetting'), 'sharedValue');
+		assert.strictEqual(testObject.getValue('configurationService.folder.machineOverridableSetting'), 'baseMachineValue');
+	}));
+
+	test('user settings inheritance failures surface as markers and clear when fixed', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const markerService = instantiationService.get(IMarkerService);
+		const sharedResource = joinPath(dirname(userDataProfileService.currentProfile.settingsResource), 'settings.shared.json');
+		await fileService.writeFile(userDataProfileService.currentProfile.settingsResource, VSBuffer.fromString('{ "extends": "./settings.shared.json" }'));
+		await testObject.reloadConfiguration();
+
+		assert.ok(markerService.read({ resource: userDataProfileService.currentProfile.settingsResource }).some(marker => marker.message.includes('./settings.shared.json')));
+
+		await fileService.writeFile(sharedResource, VSBuffer.fromString('{ "configurationService.folder.testSetting": "sharedValue" }'));
+		await testObject.reloadConfiguration();
+		assert.deepStrictEqual(markerService.read({ resource: userDataProfileService.currentProfile.settingsResource }), []);
+	}));
+
+	test('workspace settings inherit in order and let the base file win', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const settingsFolder = joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode');
+		await fileService.writeFile(joinPath(settingsFolder, 'settings.shared.1.json'), VSBuffer.fromString('{ "configurationService.folder.testSetting": "sharedValue1", "configurationService.folder.machineOverridableSetting": "sharedMachineValue1" }'));
+		await fileService.writeFile(joinPath(settingsFolder, 'settings.shared.2.json'), VSBuffer.fromString('{ "configurationService.folder.testSetting": "sharedValue2", "configurationService.folder.languageSetting": "sharedLanguageValue2" }'));
+		await fileService.writeFile(joinPath(settingsFolder, 'settings.json'), VSBuffer.fromString('{ "extends": ["./settings.shared.1.json", "./settings.shared.2.json"], "configurationService.folder.machineOverridableSetting": "baseMachineValue" }'));
+		await testObject.reloadConfiguration();
+
+		assert.strictEqual(testObject.getValue('configurationService.folder.testSetting'), 'sharedValue2');
+		assert.strictEqual(testObject.getValue('configurationService.folder.machineOverridableSetting'), 'baseMachineValue');
+		assert.strictEqual(testObject.getValue('configurationService.folder.languageSetting'), 'sharedLanguageValue2');
+	}));
+
+	test('workspace settings reload when an inherited file changes', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const settingsFolder = joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode');
+		const sharedResource = joinPath(settingsFolder, 'settings.shared.json');
+		await fileService.writeFile(sharedResource, VSBuffer.fromString('{ "configurationService.folder.testSetting": "sharedValue1" }'));
+		await fileService.writeFile(joinPath(settingsFolder, 'settings.json'), VSBuffer.fromString('{ "extends": "./settings.shared.json" }'));
+		await testObject.reloadConfiguration();
+		assert.strictEqual(testObject.getValue('configurationService.folder.testSetting'), 'sharedValue1');
+
+		const changeEvent = Event.toPromise(testObject.onDidChangeConfiguration);
+		await fileService.writeFile(sharedResource, VSBuffer.fromString('{ "configurationService.folder.testSetting": "sharedValue2" }'));
+		await changeEvent;
+		assert.strictEqual(testObject.getValue('configurationService.folder.testSetting'), 'sharedValue2');
+	}));
+
+	test('workspace settings reject inheritance traversal outside the configuration root', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const markerService = instantiationService.get(IMarkerService);
+		const settingsResource = joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode', 'settings.json');
+		await fileService.writeFile(settingsResource, VSBuffer.fromString('{ "extends": "../settings.escape.json" }'));
+		await testObject.reloadConfiguration();
+
+		assert.ok(markerService.read({ resource: settingsResource }).some(marker => marker.message.includes('must stay within the configuration directory')));
+	}));
+
+	test('workspace tasks inherit and arrays replace inherited arrays', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const settingsFolder = joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode');
+		await fileService.writeFile(joinPath(settingsFolder, 'tasks.shared.json'), VSBuffer.fromString('{ "version": "2.0.0", "presentation": { "reveal": "always" }, "tasks": [{ "label": "shared", "type": "shell", "command": "echo shared" }] }'));
+		await fileService.writeFile(joinPath(settingsFolder, 'tasks.json'), VSBuffer.fromString('{ "extends": "./tasks.shared.json", "tasks": [{ "label": "base", "type": "shell", "command": "echo base" }] }'));
+		await testObject.reloadConfiguration();
+
+		assert.deepStrictEqual(testObject.getValue('tasks'), {
+			version: '2.0.0',
+			presentation: { reveal: 'always' },
+			tasks: [{ label: 'base', type: 'shell', command: 'echo base' }]
+		});
+	}));
+
+	test('workspace launch inherit and arrays replace inherited arrays', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const settingsFolder = joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode');
+		await fileService.writeFile(joinPath(settingsFolder, 'launch.shared.json'), VSBuffer.fromString('{ "version": "0.2.0", "compounds": [{ "name": "sharedCompound", "configurations": ["shared"] }], "configurations": [{ "name": "shared", "type": "node", "request": "launch" }] }'));
+		await fileService.writeFile(joinPath(settingsFolder, 'launch.json'), VSBuffer.fromString('{ "extends": "./launch.shared.json", "configurations": [{ "name": "base", "type": "node", "request": "launch" }] }'));
+		await testObject.reloadConfiguration();
+
+		assert.deepStrictEqual(testObject.getValue('launch'), {
+			version: '0.2.0',
+			compounds: [{ name: 'sharedCompound', configurations: ['shared'] }],
+			configurations: [{ name: 'base', type: 'node', request: 'launch' }]
+		});
+	}));
+
+	test('workspace mcp inherits from another file', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		const settingsFolder = joinPath(workspaceService.getWorkspace().folders[0].uri, '.vscode');
+		await fileService.writeFile(joinPath(settingsFolder, 'mcp.shared.json'), VSBuffer.fromString('{ "inputs": [{ "id": "shared", "type": "promptString", "description": "shared" }], "servers": { "shared": { "type": "stdio", "command": "echo", "args": ["shared"] } } }'));
+		await fileService.writeFile(joinPath(settingsFolder, 'mcp.json'), VSBuffer.fromString('{ "extends": "./mcp.shared.json", "servers": { "base": { "type": "stdio", "command": "echo", "args": ["base"] } } }'));
+		await testObject.reloadConfiguration();
+
+		assert.deepStrictEqual(testObject.getValue('mcp'), {
+			inputs: [{ id: 'shared', type: 'promptString', description: 'shared' }],
+			servers: {
+				shared: { type: 'stdio', command: 'echo', args: ['shared'] },
+				base: { type: 'stdio', command: 'echo', args: ['base'] }
+			}
+		});
 	}));
 
 	test('workspace settings override user settings', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {

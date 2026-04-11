@@ -42,6 +42,8 @@ import { FileService } from '../../../../../platform/files/common/fileService.js
 import { NullLogService, ILogService } from '../../../../../platform/log/common/log.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
+import { MarkerService } from '../../../../../platform/markers/common/markerService.js';
+import { IMarkerService } from '../../../../../platform/markers/common/markers.js';
 import { ExtensionRecommendationsService } from '../../browser/extensionRecommendationsService.js';
 import { NoOpWorkspaceTagsService } from '../../../tags/browser/workspaceTagsService.js';
 import { IWorkspaceTagsService } from '../../../tags/common/workspaceTags.js';
@@ -220,6 +222,7 @@ suite('ExtensionRecommendationsService Test', () => {
 		const fileSystemProvider = disposableStore.add(new InMemoryFileSystemProvider());
 		disposableStore.add(fileService.registerProvider(ROOT.scheme, fileSystemProvider));
 		instantiationService.stub(IUriIdentityService, disposableStore.add(new UriIdentityService(instantiationService.get(IFileService))));
+		instantiationService.stub(IMarkerService, disposableStore.add(new MarkerService()));
 		instantiationService.stub(INotificationService, new TestNotificationService());
 		instantiationService.stub(IContextKeyService, new MockContextKeyService());
 		instantiationService.stub(IWorkbenchExtensionManagementService, {
@@ -383,6 +386,75 @@ suite('ExtensionRecommendationsService Test', () => {
 	test('ExtensionRecommendationsService: No workspace recommendations or prompts when extensions.json has empty array', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
 		return testNoPromptForValidRecommendations([]);
 	}));
+
+	test('WorkspaceExtensionsConfigService: inherit extensions.json and reload on inheritance changes', async () => {
+		await setUpFolderWorkspace('myFolder', []);
+		const fileService = instantiationService.get(IFileService);
+		const workspaceExtensionsConfigService = instantiationService.get(IWorkspaceExtensionsConfigService);
+		const workspaceFolder = workspaceService.getWorkspace().folders[0];
+		const sharedExtensionsResource = joinPath(workspaceFolder.uri, '.vscode', 'extensions.shared.json');
+		const extensionsResource = joinPath(workspaceFolder.uri, '.vscode', 'extensions.json');
+
+		await fileService.writeFile(sharedExtensionsResource, VSBuffer.fromString(JSON.stringify({
+			recommendations: ['mockPublisher1.mockExtension1']
+		}, null, '\t')));
+		await fileService.writeFile(extensionsResource, VSBuffer.fromString(JSON.stringify({
+			extends: './extensions.shared.json'
+		}, null, '\t')));
+
+		assert.deepStrictEqual(await workspaceExtensionsConfigService.getRecommendations(), ['mockpublisher1.mockextension1']);
+
+		const changeEvent = Event.toPromise(workspaceExtensionsConfigService.onDidChangeExtensionsConfigs);
+		await fileService.writeFile(sharedExtensionsResource, VSBuffer.fromString(JSON.stringify({
+			recommendations: ['mockPublisher2.mockExtension2']
+		}, null, '\t')));
+		await changeEvent;
+
+		assert.deepStrictEqual(await workspaceExtensionsConfigService.getRecommendations(), ['mockpublisher2.mockextension2']);
+	});
+
+	test('WorkspaceExtensionsConfigService: inheritance failures surface as markers and clear when fixed', async () => {
+		await setUpFolderWorkspace('myFolder', []);
+		const fileService = instantiationService.get(IFileService);
+		const markerService = instantiationService.get(IMarkerService);
+		const workspaceExtensionsConfigService = instantiationService.get(IWorkspaceExtensionsConfigService);
+		const workspaceFolder = workspaceService.getWorkspace().folders[0];
+		const sharedExtensionsResource = joinPath(workspaceFolder.uri, '.vscode', 'extensions.shared.json');
+		const extensionsResource = joinPath(workspaceFolder.uri, '.vscode', 'extensions.json');
+
+		await fileService.writeFile(extensionsResource, VSBuffer.fromString(JSON.stringify({
+			extends: './extensions.shared.json'
+		}, null, '\t')));
+
+		await workspaceExtensionsConfigService.getRecommendations();
+		assert.ok(markerService.read({ resource: extensionsResource }).some(marker => marker.message.includes('./extensions.shared.json')));
+
+		await fileService.writeFile(sharedExtensionsResource, VSBuffer.fromString(JSON.stringify({
+			recommendations: ['mockPublisher1.mockExtension1']
+		}, null, '\t')));
+
+		assert.deepStrictEqual(await workspaceExtensionsConfigService.getRecommendations(), ['mockpublisher1.mockextension1']);
+		assert.deepStrictEqual(markerService.read({ resource: extensionsResource }), []);
+	});
+
+	test('WorkspaceExtensionsConfigService: arrays replace inherited arrays', async () => {
+		await setUpFolderWorkspace('myFolder', []);
+		const fileService = instantiationService.get(IFileService);
+		const workspaceExtensionsConfigService = instantiationService.get(IWorkspaceExtensionsConfigService);
+		const workspaceFolder = workspaceService.getWorkspace().folders[0];
+		const sharedExtensionsResource = joinPath(workspaceFolder.uri, '.vscode', 'extensions.shared.json');
+		const extensionsResource = joinPath(workspaceFolder.uri, '.vscode', 'extensions.json');
+
+		await fileService.writeFile(sharedExtensionsResource, VSBuffer.fromString(JSON.stringify({
+			recommendations: ['mockPublisher1.mockExtension1']
+		}, null, '\t')));
+		await fileService.writeFile(extensionsResource, VSBuffer.fromString(JSON.stringify({
+			extends: './extensions.shared.json',
+			recommendations: ['mockPublisher2.mockExtension2']
+		}, null, '\t')));
+
+		assert.deepStrictEqual(await workspaceExtensionsConfigService.getRecommendations(), ['mockpublisher2.mockextension2']);
+	});
 
 	test('ExtensionRecommendationsService: Prompt for valid workspace recommendations', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
 		await setUpFolderWorkspace('myFolder', mockTestData.recommendedExtensions);

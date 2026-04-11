@@ -30,7 +30,7 @@ import { KeyMod, KeyCode } from '../../../../base/common/keyCodes.js';
 import schemaVersion1 from '../common/jsonSchema_v1.js';
 import schemaVersion2, { updateProblemMatchers, updateTaskDefinitions } from '../common/jsonSchema_v2.js';
 import { AbstractTaskService, ConfigureTaskAction } from './abstractTaskService.js';
-import { tasksSchemaId } from '../../../services/configuration/common/configuration.js';
+import { CONFIGURATION_INHERITANCE_KEY, tasksSchemaId } from '../../../services/configuration/common/configuration.js';
 import { ConfigurationScope, Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
 import { WorkbenchStateContext } from '../../../common/contextkeys.js';
 import { IQuickAccessRegistry, Extensions as QuickAccessExtensions } from '../../../../platform/quickinput/common/quickAccess.js';
@@ -409,6 +409,14 @@ quickAccessRegistry.registerQuickAccessProvider({
 	helpEntries: [{ description: nls.localize('tasksQuickAccessHelp', "Run Task"), commandCenterOrder: 60 }]
 });
 
+const tasksInheritanceProperty: IJSONSchema = {
+	type: ['string', 'array'],
+	items: {
+		type: 'string'
+	},
+	markdownDescription: nls.localize('JsonSchema.tasks.extends', "Inherit from one or more JSON files, resolved relative to this file, before applying this file's own values.")
+};
+
 // tasks.json validation
 const schema: IJSONSchema = {
 	id: tasksSchemaId,
@@ -416,6 +424,9 @@ const schema: IJSONSchema = {
 	type: 'object',
 	allowTrailingCommas: true,
 	allowComments: true,
+	properties: {
+		[CONFIGURATION_INHERITANCE_KEY]: tasksInheritanceProperty
+	},
 	default: {
 		version: '2.0.0',
 		tasks: [
@@ -439,6 +450,16 @@ schema.definitions = {
 	...schemaVersion2.definitions,
 };
 schema.oneOf = [...(schemaVersion2.oneOf || []), ...(schemaVersion1.oneOf || [])];
+(schemaVersion1.oneOf?.[0] as IJSONSchema | undefined)?.allOf?.forEach(schemaPart => {
+	if (schemaPart.properties) {
+		schemaPart.properties[CONFIGURATION_INHERITANCE_KEY] = tasksInheritanceProperty;
+	}
+});
+(schemaVersion2.oneOf?.[0] as IJSONSchema | undefined)?.allOf?.forEach(schemaPart => {
+	if (schemaPart.properties) {
+		schemaPart.properties[CONFIGURATION_INHERITANCE_KEY] = tasksInheritanceProperty;
+	}
+});
 
 const jsonRegistry = <jsonContributionRegistry.IJSONContributionRegistry>Registry.as(jsonContributionRegistry.Extensions.JSONContribution);
 jsonRegistry.registerSchema(tasksSchemaId, schema);

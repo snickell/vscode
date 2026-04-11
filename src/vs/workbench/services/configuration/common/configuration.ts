@@ -36,6 +36,7 @@ export const FOLDER_SCOPES = [ConfigurationScope.RESOURCE, ConfigurationScope.LA
 export const TASKS_CONFIGURATION_KEY = 'tasks';
 export const LAUNCH_CONFIGURATION_KEY = 'launch';
 export const MCP_CONFIGURATION_KEY = 'mcp';
+export const CONFIGURATION_INHERITANCE_KEY = 'extends';
 
 export const WORKSPACE_STANDALONE_CONFIGURATIONS = Object.create(null);
 WORKSPACE_STANDALONE_CONFIGURATIONS[TASKS_CONFIGURATION_KEY] = `${FOLDER_CONFIG_FOLDER_NAME}/${TASKS_CONFIGURATION_KEY}.json`;
