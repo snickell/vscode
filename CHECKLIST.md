@@ -69,7 +69,7 @@
 
 - [x] Trim small bits of repetition in the descriptor helper without changing the file-family shape.
 - [x] Make the extension recommendation target enumeration read a little cleaner.
-- [x] Make the configuration-editing selector and completion helpers a little plainer.
+- [ ] Make the configuration-editing selector and completion helpers a little plainer.
 - [x] Re-run the focused validation slice after the polish pass.
 
 ## Upstream Port to Current Main
@@ -87,3 +87,13 @@
 - [x] Re-run the current-main source typecheck with the current TS 6 toolchain.
 - [x] Re-run the direct source-level descriptor regression and Local Workspace ext-host inspect checks.
 - [ ] Re-run the browser-bound configuration and recommendation slices on the current-main base.
+
+## Finalization After Pushed Head
+
+- [x] Review the current uncommitted delta against the pushed branch head.
+- [x] Finalize the current refactor shape in code.
+- [x] Re-run simplification, cleanup, validation, critique, and merge-readiness checks after the final code changes.
+- [ ] Commit the remaining code changes.
+- [ ] Push the branch.
+- [ ] Watch CI on the new pushed head.
+- [ ] Fix CI until green.

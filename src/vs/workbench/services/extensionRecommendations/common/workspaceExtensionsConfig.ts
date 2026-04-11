@@ -8,6 +8,7 @@ import { Emitter, Event } from '../../../../base/common/event.js';
 import { parse } from '../../../../base/common/json.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { basename } from '../../../../base/common/resources.js';
+import { assertReturnsDefined } from '../../../../base/common/types.js';
 import { URI } from '../../../../base/common/uri.js';
 import { getIconClasses } from '../../../../editor/common/services/getIconClasses.js';
 import { ILanguageService } from '../../../../editor/common/languages/language.js';
@@ -22,8 +23,8 @@ import { getWorkspaceLocalConfigPath } from '../../configuration/common/configur
 import { IJSONEditingService, IJSONValue } from '../../configuration/common/jsonEditing.js';
 import { EXTENSIONS_CONFIGURATION_KEY, getLocalWorkspaceFileSectionDescriptor, getWorkspaceFileSectionDescriptor } from '../../configuration/common/workspaceFileConfiguration.js';
 
-const extensionsConfigurationDescriptor = getWorkspaceFileSectionDescriptor(EXTENSIONS_CONFIGURATION_KEY)!;
-const localExtensionsConfigurationDescriptor = getLocalWorkspaceFileSectionDescriptor(EXTENSIONS_CONFIGURATION_KEY)!;
+const extensionsConfigurationDescriptor = assertReturnsDefined(getWorkspaceFileSectionDescriptor(EXTENSIONS_CONFIGURATION_KEY));
+const localExtensionsConfigurationDescriptor = assertReturnsDefined(getLocalWorkspaceFileSectionDescriptor(EXTENSIONS_CONFIGURATION_KEY));
 const workspaceExtensionsJsonPathPrefix = [extensionsConfigurationDescriptor.workspaceSection];
 
 export const EXTENSIONS_CONFIG = extensionsConfigurationDescriptor.folderSharedPath;

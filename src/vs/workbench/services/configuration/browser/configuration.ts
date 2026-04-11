@@ -13,7 +13,7 @@ import { FileChangeType, FileChangesEvent, IFileService, whenProviderRegistered,
 import { ConfigurationModel, ConfigurationModelParser, ConfigurationParseOptions, UserSettings } from '../../../../platform/configuration/common/configurationModels.js';
 import { WorkspaceConfigurationModelParser, StandaloneConfigurationModelParser } from '../common/configurationModels.js';
 import { FOLDER_LOCAL_SETTINGS_NAME, FOLDER_SETTINGS_NAME, IConfigurationCache, ConfigurationKey, REMOTE_MACHINE_SCOPES, FOLDER_SCOPES, WORKSPACE_SCOPES, APPLY_ALL_PROFILES_SETTING, APPLICATION_SCOPES, getWorkspaceLocalConfigPath } from '../common/configuration.js';
-import { TASKS_CONFIGURATION_KEY, MCP_CONFIGURATION_KEY, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, WORKSPACE_STANDALONE_CONFIGURATION_KEYS, WORKSPACE_STANDALONE_SECTION_DESCRIPTORS, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_KEYS, LOCAL_WORKSPACE_STANDALONE_SECTION_DESCRIPTORS, type IWorkspaceFileConfigurationDescriptor, type LocalWorkspaceFileConfigurationDescriptor } from '../common/workspaceFileConfiguration.js';
+import { TASKS_CONFIGURATION_KEY, MCP_CONFIGURATION_KEY, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, WORKSPACE_STANDALONE_CONFIGURATION_KEYS, WORKSPACE_STANDALONE_SECTION_DESCRIPTORS, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_KEYS, LOCAL_WORKSPACE_STANDALONE_SECTION_DESCRIPTORS, type WorkspaceStandaloneConfigurationDescriptor, type LocalWorkspaceStandaloneConfigurationDescriptor } from '../common/workspaceFileConfiguration.js';
 import { IStoredWorkspaceFolder } from '../../../../platform/workspaces/common/workspaces.js';
 import { WorkbenchState, IWorkspaceFolder, IWorkspaceIdentifier } from '../../../../platform/workspace/common/workspace.js';
 import { ConfigurationScope, Extensions, IConfigurationRegistry, OVERRIDE_PROPERTY_REGEX } from '../../../../platform/configuration/common/configurationRegistry.js';
@@ -1098,15 +1098,15 @@ export class FolderConfiguration extends Disposable {
 			this.folderLocalConfiguration = this.cachedFolderLocalConfiguration;
 			whenProviderRegistered(workspaceFolder.uri, fileService)
 				.then(() => {
-					this.folderConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_SETTINGS_NAME, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, false));
-					this.folderLocalConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_LOCAL_SETTINGS_NAME, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, true));
+					this.folderConfiguration = this._register(this.createSharedFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_SETTINGS_NAME, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS));
+					this.folderLocalConfiguration = this._register(this.createLocalFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_LOCAL_SETTINGS_NAME, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS));
 					this._register(this.folderConfiguration.onDidChange(e => this.onDidFolderConfigurationChange()));
 					this._register(this.folderLocalConfiguration.onDidChange(e => this.onDidFolderConfigurationChange()));
 					this.onDidFolderConfigurationChange();
 				});
 		} else {
-			this.folderConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_SETTINGS_NAME, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, false));
-			this.folderLocalConfiguration = this._register(this.createFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_LOCAL_SETTINGS_NAME, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, true));
+			this.folderConfiguration = this._register(this.createSharedFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_SETTINGS_NAME, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS));
+			this.folderLocalConfiguration = this._register(this.createLocalFileServiceBasedConfiguration(fileService, uriIdentityService, logService, FOLDER_LOCAL_SETTINGS_NAME, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS));
 			this._register(this.folderConfiguration.onDidChange(e => this.onDidFolderConfigurationChange()));
 			this._register(this.folderLocalConfiguration.onDidChange(e => this.onDidFolderConfigurationChange()));
 		}
@@ -1155,11 +1155,15 @@ export class FolderConfiguration extends Disposable {
 		this._onDidChange.fire();
 	}
 
-	private createFileServiceBasedConfiguration(fileService: IFileService, uriIdentityService: IUriIdentityService, logService: ILogService, settingsName: string, standAloneConfigurations: readonly IWorkspaceFileConfigurationDescriptor[], local: boolean) {
+	private createSharedFileServiceBasedConfiguration(fileService: IFileService, uriIdentityService: IUriIdentityService, logService: ILogService, settingsName: string, standAloneConfigurations: readonly WorkspaceStandaloneConfigurationDescriptor[]) {
 		const settingsResource = uriIdentityService.extUri.joinPath(this.configurationFolder, `${settingsName}.json`);
-		const standAloneConfigurationResources: [string, URI][] = local
-			? (standAloneConfigurations as readonly LocalWorkspaceFileConfigurationDescriptor[]).map(descriptor => ([descriptor.key, uriIdentityService.extUri.joinPath(this.workspaceFolder.uri, descriptor.folderLocalPath)]))
-			: standAloneConfigurations.map(descriptor => ([descriptor.key, uriIdentityService.extUri.joinPath(this.workspaceFolder.uri, descriptor.folderSharedPath)]));
+		const standAloneConfigurationResources: [string, URI][] = standAloneConfigurations.map(descriptor => ([descriptor.key, uriIdentityService.extUri.joinPath(this.workspaceFolder.uri, descriptor.folderSharedPath)]));
+		return new FileServiceBasedConfiguration(this.configurationFolder.toString(), settingsResource, standAloneConfigurationResources, { scopes: this.scopes, skipRestricted: this.isUntrusted() }, fileService, uriIdentityService, logService);
+	}
+
+	private createLocalFileServiceBasedConfiguration(fileService: IFileService, uriIdentityService: IUriIdentityService, logService: ILogService, settingsName: string, standAloneConfigurations: readonly LocalWorkspaceStandaloneConfigurationDescriptor[]) {
+		const settingsResource = uriIdentityService.extUri.joinPath(this.configurationFolder, `${settingsName}.json`);
+		const standAloneConfigurationResources: [string, URI][] = standAloneConfigurations.map(descriptor => ([descriptor.key, uriIdentityService.extUri.joinPath(this.workspaceFolder.uri, descriptor.folderLocalPath)]));
 		return new FileServiceBasedConfiguration(this.configurationFolder.toString(), settingsResource, standAloneConfigurationResources, { scopes: this.scopes, skipRestricted: this.isUntrusted() }, fileService, uriIdentityService, logService);
 	}
 

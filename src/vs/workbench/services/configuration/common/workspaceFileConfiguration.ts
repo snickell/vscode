@@ -47,8 +47,12 @@ export interface IWorkspaceFileConfigurationDescriptor {
 }
 
 export type WorkspaceFileSectionDescriptor = IWorkspaceFileConfigurationDescriptor & { readonly workspaceSection: string };
+export type WorkspaceStandaloneConfigurationDescriptor = IWorkspaceFileConfigurationDescriptor & { readonly folderType: 'standalone' };
+export type WorkspaceStandaloneSectionDescriptor = WorkspaceFileSectionDescriptor & WorkspaceStandaloneConfigurationDescriptor;
 export type LocalWorkspaceFileConfigurationDescriptor = IWorkspaceFileConfigurationDescriptor & { readonly folderLocalPath: string };
 export type LocalWorkspaceFileSectionDescriptor = WorkspaceFileSectionDescriptor & LocalWorkspaceFileConfigurationDescriptor;
+export type LocalWorkspaceStandaloneConfigurationDescriptor = LocalWorkspaceFileConfigurationDescriptor & WorkspaceStandaloneConfigurationDescriptor;
+export type LocalWorkspaceStandaloneSectionDescriptor = LocalWorkspaceFileSectionDescriptor & WorkspaceStandaloneConfigurationDescriptor;
 export type UserStandaloneConfigurationDescriptor = IWorkspaceFileConfigurationDescriptor & { readonly userStandalonePath: string };
 
 function createStandaloneDescriptor(
@@ -103,6 +107,10 @@ function hasWorkspaceSectionAndFolderLocalPath(descriptor: IWorkspaceFileConfigu
 	return hasWorkspaceSection(descriptor) && hasFolderLocalPath(descriptor);
 }
 
+function isStandaloneDescriptor<T extends IWorkspaceFileConfigurationDescriptor>(descriptor: T): descriptor is T & { readonly folderType: 'standalone' } {
+	return descriptor.folderType === 'standalone';
+}
+
 function hasUserStandalonePath(descriptor: IWorkspaceFileConfigurationDescriptor): descriptor is UserStandaloneConfigurationDescriptor {
 	return typeof descriptor.userStandalonePath === 'string';
 }
@@ -110,10 +118,10 @@ function hasUserStandalonePath(descriptor: IWorkspaceFileConfigurationDescriptor
 export const WORKSPACE_FILE_SECTION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(hasWorkspaceSection);
 export const LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(hasFolderLocalPath);
 export const LOCAL_WORKSPACE_FILE_SECTION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(hasWorkspaceSectionAndFolderLocalPath);
-export const WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => descriptor.folderType === 'standalone');
-export const WORKSPACE_STANDALONE_SECTION_DESCRIPTORS = WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.filter(hasWorkspaceSection);
-export const LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS = LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => descriptor.folderType === 'standalone');
-export const LOCAL_WORKSPACE_STANDALONE_SECTION_DESCRIPTORS = LOCAL_WORKSPACE_FILE_SECTION_DESCRIPTORS.filter(descriptor => descriptor.folderType === 'standalone');
+export const WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(isStandaloneDescriptor);
+export const WORKSPACE_STANDALONE_SECTION_DESCRIPTORS = WORKSPACE_FILE_SECTION_DESCRIPTORS.filter(isStandaloneDescriptor);
+export const LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS = LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(isStandaloneDescriptor);
+export const LOCAL_WORKSPACE_STANDALONE_SECTION_DESCRIPTORS = LOCAL_WORKSPACE_FILE_SECTION_DESCRIPTORS.filter(isStandaloneDescriptor);
 export const USER_STANDALONE_CONFIGURATION_DESCRIPTORS = WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.filter(hasUserStandalonePath);
 export const WORKSPACE_STANDALONE_CONFIGURATION_KEYS = WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key);
 export const LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_KEYS = LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key);

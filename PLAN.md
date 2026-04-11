@@ -2,50 +2,56 @@
 
 ## Intent
 
-Port the branch onto current `origin/main` and keep the feature first-class on the current tree.
+Finish the current `origin/main` port of the first-class Local Workspace targets branch and leave no half-adopted file-family plumbing behind.
 
-The current upstream is not the tree this work started on. The branch now sits on a merged `origin/main` with newer configuration model APIs, newer preferences/editor infrastructure, newer extension recommendation plumbing, an `electron-browser` test layout, and a TS 6 / ES2024 toolchain.
-
-The feature story stays the same:
+The branch already has the right design:
 
 - explicit `WORKSPACE_LOCAL` and `WORKSPACE_FOLDER_LOCAL` targets
-- explicit local files for the supported workspace file family
+- explicit local files for the supported file family
 - explicit provenance in inspect, read, write, and UI flows
+- one canonical descriptor-first mechanism for the supported workspace file family
 
-The implementation story must be updated to the current seams.
+This pass is not a redesign. It is a finish pass on top of the current pushed branch head.
 
-## Upstream Findings
+## Current Branch State
 
-The upstream diff review on the touched paths showed four things that matter here:
+The branch head is pushed and CI is running on it.
 
-- configuration common and workbench configuration code now carry newer parser, inspect, and logging shapes; the port must fit those directly instead of preserving older helper contours
-- preferences command and editor registration changed materially; the local-target commands must be rethreaded through the current registration shape, not through older command blocks
-- extension recommendation tests and services now live on the `electron-browser` side and use newer test setup utilities
-- the current toolchain expects TS 6 semantics and `ES2024`; validation must use a current compiler, not the stale TS 5.2 binary from the old checkout
+The current worktree delta against that pushed head is not feature code. It is only `NEW_WORK.md`, which is an instruction file and not part of the branch product. That means the remaining implementation work must come from reviewing the branch itself and tightening the current code shape, not from carrying forward a hidden local feature diff.
 
-## Decision
+The current live branch story remains:
 
-Keep the current target model.
+- `settings`, `tasks`, `launch`, and `extensions` participate in the local workspace file family
+- `*.code-workspace.local` is a real local workspace source for the supported sections
+- `.vscode/*.local.json` is a real local folder source for the supported standalone files
+- local values remain separate from shared values in inspect, merge, write, and UI flows
 
-The current upstream still does not provide a cleaner native seam than explicit `WORKSPACE_LOCAL` and `WORKSPACE_FOLDER_LOCAL` targets. The correct port is therefore not a retreat to overlays or disguised merged files. The correct port is to fit the existing first-class target model into the current upstream structure with less drift and fewer bespoke branches.
+## Final Intended Shape
 
-The descriptor-first file-family refactor also still holds. The remaining work is to make the current upstream port compile, read cleanly, and validate on the new tree.
+Keep the descriptor-first mechanism and finish it cleanly.
+
+The canonical descriptor in `workspaceFileConfiguration.ts` is the source of truth for the supported workspace file family. The final branch should make the surrounding plumbing read as one intentional mechanism:
+
+- exact typed subsets for sectioned, local, and standalone descriptor slices
+- parser and loader call sites consuming those exact slices directly
+- configuration editing and extension recommendation code using the descriptor shape consistently
+- no remaining casts or optional-field recovery where the descriptor API can express the real invariant directly
+
+Do not broaden the scope beyond the file family already on this branch. Do not retreat from explicit local targets.
 
 ## Planned Work
 
-1. Complete the current-upstream port cleanup after the merge.
-   Fix post-merge syntax and API drift in the current touched files, especially preferences command registration, configuration editing routing, extension recommendation test plumbing, and settings completion registration.
+1. Review the branch against the pushed head and fix the remaining shape issues in code.
+   Keep the current typed-descriptor cleanup, then remove the last cast and the last descriptor lookup assertions so the shared file-family plumbing ends in one exact typed shape.
 
-2. Reconcile the local workspace file family with current upstream ownership boundaries.
-   Keep the canonical descriptor in workbench configuration common code and keep the extension runtime on a local mirror where a direct import would be a layering mistake.
+2. Re-run the focused validation slice on the current tree.
+   Keep using the current TS 6 / `ES2024` toolchain and the source-level mocha checks that are reproducible here. Use the browser harness only where it is actually runnable.
 
-3. Re-run targeted validation on the current toolchain.
-   Use a current TS 6 compiler for source validation, rerun the focused source-level checks that still run cleanly on the merged tree, and use the built main checkout only where the browser harness is still required.
+3. Re-run the finish passes after the code settles.
+   Re-do coherence, minimalism, and mergeability on the code as it exists after the final cleanup, not on the earlier port.
 
-4. Re-run the end passes on the current upstream base.
-   Re-do coherence, minimalism, and style/mergeability review after the port is stable, not by inheriting the old-base verdicts.
-
-5. Commit, push, wait for CI, and repair CI if needed.
+4. Commit, push, watch CI, and fix branch-caused failures until green.
+   External permission or billing failures should be recorded as external. Real compile, test, screenshot, or platform regressions from this branch must be fixed on branch.
 
 ## Validation
 
@@ -54,35 +60,31 @@ In progress on the current upstream base.
 Current signals:
 
 - the merge onto `origin/main` is complete
-- the upstream review is complete
+- the pushed branch head is `fa1f86c8ecb734855cb207d8682bc2d0d4ee762f`
 - the current-main code port is complete, including the post-merge syntax repairs and the current-tree cleanup that moved workbench configuration constants back onto the canonical descriptor module
 - the workbench-only constructor compatibility branch was removed; current callers in sessions and tests now pass explicit empty local models instead
-- the current follow-on cleanup tightened the descriptor surface so the typed local and sectioned subsets exist explicitly in `workspaceFileConfiguration.ts`, instead of leaving consumers to combine optional fields with assertions
-- `NODE_OPTIONS=--max-old-space-size=8192 ./node_modules/.bin/tsc -p src/tsconfig.json --noEmit --pretty false --skipLibCheck` passes
-- `./node_modules/.bin/tsc -p extensions/configuration-editing/tsconfig.json --noEmit --pretty false --skipLibCheck` passes
+- the follow-on cleanup already introduced explicit typed descriptor subsets for section-bearing and local section-bearing entries
+- `NODE_OPTIONS=--max-old-space-size=8192 ./node_modules/.bin/tsc -p src/tsconfig.json --noEmit --pretty false --skipLibCheck` passes on the current tree
+- `./node_modules/.bin/tsc -p extensions/configuration-editing/tsconfig.json --noEmit --pretty false --skipLibCheck` passes on the current tree
 - direct source-level mocha validation passes for the descriptor regression in `configurationModels.test.ts` and the Local Workspace inspect case in `extHostConfiguration.test.ts`
-- the browser-bound suites still require the real browser harness; the built-checkout runner is currently hanging silently here, and direct source-level mocha stops at missing browser globals for the configuration and recommendation suites
+- the screenshot upload failure on the current pushed head is external to branch code: the job reaches artifact upload and then gets a `403` from the screenshot service
+- the `Prevent engineering system changes in PRs` failure on the current pushed head is external to branch code: the workflow token cannot query collaborator permissions on `microsoft/vscode`
+- the browser-bound configuration and recommendation slices are still not directly reproducible in this shell
 
 ## Critique Pass 1: coherence
 
 Reopened.
 
-Reran after the current-main port.
-
-The branch still tells one story across settings, tasks, launch, extensions, and `*.code-workspace.local`: local state is explicit, target-specific, and not collapsed into overlays. The one new upstream wrinkle is `mcp`, which belongs in the canonical descriptor as a user and shared-folder standalone configuration, but not in the local workspace file-family assertions. The regression test now checks both the full descriptor set and the local subset explicitly.
+The final branch must still read as one mechanism across `settings`, `tasks`, `launch`, `extensions`, and `*.code-workspace.local`. The acceptable cleanup is the one that sharpens the descriptor API so the call sites express those invariants directly. Any cleanup that reintroduces ad hoc per-file branching is wrong.
 
 ## Critique Pass 2: minimalism
 
 Reopened.
 
-Reran after the current-main port.
-
-The worthwhile trim on the newer tree was to remove the workbench-only constructor compatibility branch and update the remaining older call sites directly. The other worthwhile trim was to stop shadowing descriptor-backed constants in `configuration.ts`. The platform-layer compatibility defaulting remains justified because current upstream still has old-form callers there.
+The right final simplification is to make the descriptor surface exact enough that consumers do less work. The wrong simplification is to hide invariants in casts, fallbacks, or duplicated local tables.
 
 ## Critique Pass 3: style and mergeability
 
 Reopened.
 
-Reran after the current-main port.
-
-The final current-tree cleanup keeps the diff on the current ownership lines: descriptor-backed constants live in the descriptor module, workbench call sites pass explicit local models, tests describe the local workspace subset separately from the wider descriptor set, and the merge-repair noise in preferences and completion registration has been reduced to straightforward syntax and import cleanup. The only remaining caveat is environmental: browser-harness validation is not yet reproducible in this shell despite the source-level passes and green typechecks.
+The branch should end with straightforward call sites, explicit invariants, and no local-only rescue logic where a typed descriptor subset can state the contract. CI caveats must be separated cleanly into branch-caused failures and fork-environment failures.
