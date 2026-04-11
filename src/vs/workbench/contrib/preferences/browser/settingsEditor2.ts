@@ -23,7 +23,6 @@ import { Iterable } from '../../../../base/common/iterator.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, dispose, type IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import * as platform from '../../../../base/common/platform.js';
-import { withNullAsUndefined, withUndefinedAsNull } from '../../../../base/common/types.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { StopWatch } from '../../../../base/common/stopwatch.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
@@ -93,10 +92,6 @@ export function createGroupIterator(group: SettingsTreeGroupElement): Iterable<I
 }
 
 const $ = DOM.$;
-
-interface IFocusEventFromScroll extends KeyboardEvent {
-	fromScroll: true;
-}
 
 function reviveSettingsTarget(target: unknown): SettingsTarget | undefined {
 	if (target === undefined || target === null) {

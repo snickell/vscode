@@ -16,7 +16,7 @@ import { URI, UriComponents } from '../../../base/common/uri.js';
 import { addToValueTree, ConfigurationTarget, getConfigurationValue, IConfigurationChange, IConfigurationChangeEvent, IConfigurationCompareResult, IConfigurationData, IConfigurationModel, IConfigurationOverrides, IConfigurationUpdateOverrides, IConfigurationValue, IInspectValue, IOverrides, removeFromValueTree, toValuesTree } from './configuration.js';
 import { ConfigurationScope, Extensions, IConfigurationPropertySchema, IConfigurationRegistry, overrideIdentifiersFromKey, OVERRIDE_PROPERTY_REGEX, IRegisteredConfigurationPropertySchema } from './configurationRegistry.js';
 import { FileOperation, IFileService } from '../../files/common/files.js';
-import { ILogService } from '../../log/common/log.js';
+import { ILogService, NullLogService } from '../../log/common/log.js';
 import { Registry } from '../../registry/common/platform.js';
 import { Workspace } from '../../workspace/common/workspace.js';
 
@@ -28,6 +28,8 @@ type InspectValue<V> = IInspectValue<V> & { merged?: V };
 
 export class ConfigurationModel implements IConfigurationModel {
 
+	private static readonly nullLogService = new NullLogService();
+
 	static createEmptyModel(logService: ILogService): ConfigurationModel {
 		return new ConfigurationModel({}, [], [], undefined, logService);
 	}
@@ -35,11 +37,11 @@ export class ConfigurationModel implements IConfigurationModel {
 	private readonly overrideConfigurations = new Map<string, ConfigurationModel>();
 
 	constructor(
-		private readonly _contents: IStringDictionary<unknown>,
-		private readonly _keys: string[],
-		private readonly _overrides: IOverrides[],
-		private readonly _raw: IStringDictionary<unknown> | ReadonlyArray<IStringDictionary<unknown> | ConfigurationModel> | undefined,
-		private readonly logService: ILogService
+		private readonly _contents: IStringDictionary<unknown> = {},
+		private readonly _keys: string[] = [],
+		private readonly _overrides: IOverrides[] = [],
+		private readonly _raw: IStringDictionary<unknown> | ReadonlyArray<IStringDictionary<unknown> | ConfigurationModel> | undefined = undefined,
+		private readonly logService: ILogService = ConfigurationModel.nullLogService
 	) {
 	}
 
@@ -693,7 +695,7 @@ class ConfigurationInspectValue<V> implements IConfigurationValue<V> {
 	private _workspaceLocalInspectValue: InspectValue<V> | undefined | null;
 	private get workspaceLocalInspectValue(): InspectValue<V> | null {
 		if (this._workspaceLocalInspectValue === undefined) {
-			this._workspaceLocalInspectValue = this.workspaceLocalConfiguration ? this.inspect<V>(this.workspaceLocalConfiguration, this.key, this.overrides.overrideIdentifier) : null;
+			this._workspaceLocalInspectValue = this.workspaceLocalConfiguration?.inspect<V>(this.key, this.overrides.overrideIdentifier) ?? null;
 		}
 		return this._workspaceLocalInspectValue;
 	}
@@ -725,7 +727,7 @@ class ConfigurationInspectValue<V> implements IConfigurationValue<V> {
 	private _workspaceFolderLocalInspectValue: InspectValue<V> | undefined | null;
 	private get workspaceFolderLocalInspectValue(): InspectValue<V> | null {
 		if (this._workspaceFolderLocalInspectValue === undefined) {
-			this._workspaceFolderLocalInspectValue = this.folderLocalConfigurationModel ? this.inspect<V>(this.folderLocalConfigurationModel, this.key, this.overrides.overrideIdentifier) : null;
+			this._workspaceFolderLocalInspectValue = this.folderLocalConfigurationModel?.inspect<V>(this.key, this.overrides.overrideIdentifier) ?? null;
 		}
 		return this._workspaceFolderLocalInspectValue;
 	}
@@ -758,23 +760,62 @@ class ConfigurationInspectValue<V> implements IConfigurationValue<V> {
 
 export class Configuration {
 
+	private static readonly nullLogService = new NullLogService();
+
 	private _workspaceConsolidatedConfiguration: ConfigurationModel | null = null;
 	private _foldersConsolidatedConfigurations = new ResourceMap<ConfigurationModel>();
 
+	private _defaultConfiguration: ConfigurationModel;
+	private _policyConfiguration: ConfigurationModel;
+	private _applicationConfiguration: ConfigurationModel;
+	private _localUserConfiguration: ConfigurationModel;
+	private _remoteUserConfiguration: ConfigurationModel;
+	private _workspaceConfiguration: ConfigurationModel;
+	private _folderConfigurations: ResourceMap<ConfigurationModel>;
+	private _memoryConfiguration: ConfigurationModel;
+	private _memoryConfigurationByResource: ResourceMap<ConfigurationModel>;
+	private _workspaceLocalConfiguration: ConfigurationModel;
+	private _folderLocalConfigurations: ResourceMap<ConfigurationModel>;
+	private readonly logService: ILogService;
+
 	constructor(
-		private _defaultConfiguration: ConfigurationModel,
-		private _policyConfiguration: ConfigurationModel,
-		private _applicationConfiguration: ConfigurationModel,
-		private _localUserConfiguration: ConfigurationModel,
-		private _remoteUserConfiguration: ConfigurationModel,
-		private _workspaceConfiguration: ConfigurationModel,
-		private _folderConfigurations: ResourceMap<ConfigurationModel>,
-		private _memoryConfiguration: ConfigurationModel,
-		private _memoryConfigurationByResource: ResourceMap<ConfigurationModel>,
-		private _workspaceLocalConfiguration: ConfigurationModel,
-		private _folderLocalConfigurations: ResourceMap<ConfigurationModel>,
-		private readonly logService: ILogService
+		defaultConfiguration: ConfigurationModel,
+		policyConfiguration: ConfigurationModel,
+		applicationConfiguration: ConfigurationModel,
+		localUserConfiguration: ConfigurationModel,
+		remoteUserConfiguration: ConfigurationModel,
+		workspaceConfiguration: ConfigurationModel,
+		folderConfigurations: ResourceMap<ConfigurationModel>,
+		memoryConfiguration: ConfigurationModel,
+		memoryConfigurationByResource: ResourceMap<ConfigurationModel>,
+		workspaceLocalConfigurationOrLogService: ConfigurationModel | ILogService,
+		folderLocalConfigurationsOrLogService?: ResourceMap<ConfigurationModel> | ILogService,
+		logService: ILogService = Configuration.nullLogService
 	) {
+		this._defaultConfiguration = defaultConfiguration;
+		this._policyConfiguration = policyConfiguration;
+		this._applicationConfiguration = applicationConfiguration;
+		this._localUserConfiguration = localUserConfiguration;
+		this._remoteUserConfiguration = remoteUserConfiguration;
+		this._workspaceConfiguration = workspaceConfiguration;
+		this._folderConfigurations = folderConfigurations;
+		this._memoryConfiguration = memoryConfiguration;
+		this._memoryConfigurationByResource = memoryConfigurationByResource;
+
+		if (workspaceLocalConfigurationOrLogService instanceof ConfigurationModel) {
+			this._workspaceLocalConfiguration = workspaceLocalConfigurationOrLogService;
+			if (folderLocalConfigurationsOrLogService instanceof ResourceMap) {
+				this._folderLocalConfigurations = folderLocalConfigurationsOrLogService;
+				this.logService = logService;
+			} else {
+				this._folderLocalConfigurations = new ResourceMap<ConfigurationModel>();
+				this.logService = folderLocalConfigurationsOrLogService ?? logService;
+			}
+		} else {
+			this._workspaceLocalConfiguration = ConfigurationModel.createEmptyModel(workspaceLocalConfigurationOrLogService);
+			this._folderLocalConfigurations = new ResourceMap<ConfigurationModel>();
+			this.logService = workspaceLocalConfigurationOrLogService;
+		}
 	}
 
 	getValue(section: string | undefined, overrides: IConfigurationOverrides, workspace: Workspace | undefined): unknown {
@@ -1076,7 +1117,7 @@ export class Configuration {
 		return this._folderConfigurations;
 	}
 
-	protected get folderLocalConfigurations(): ResourceMap<ConfigurationModel> {
+	get folderLocalConfigurations(): ResourceMap<ConfigurationModel> {
 		return this._folderLocalConfigurations;
 	}
 

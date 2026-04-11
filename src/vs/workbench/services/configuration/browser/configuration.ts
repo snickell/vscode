@@ -1112,22 +1112,34 @@ export class FolderConfiguration extends Disposable {
 		}
 	}
 
-	async loadConfiguration(): Promise<IWorkspaceConfigurationModels> {
+	async loadConfigurationModels(): Promise<IWorkspaceConfigurationModels> {
 		const [shared, local] = await Promise.all([this.folderConfiguration.loadConfiguration(), this.folderLocalConfiguration.loadConfiguration()]);
 		return { shared, local };
 	}
 
-	updateWorkspaceTrust(trusted: boolean): IWorkspaceConfigurationModels {
-		this.workspaceTrusted = trusted;
-		return this.reparse();
+	async loadConfiguration(): Promise<ConfigurationModel> {
+		return (await this.loadConfigurationModels()).shared;
 	}
 
-	reparse(): IWorkspaceConfigurationModels {
+	updateWorkspaceTrustConfigurationModels(trusted: boolean): IWorkspaceConfigurationModels {
+		this.workspaceTrusted = trusted;
+		return this.reparseConfigurationModels();
+	}
+
+	updateWorkspaceTrust(trusted: boolean): ConfigurationModel {
+		return this.updateWorkspaceTrustConfigurationModels(trusted).shared;
+	}
+
+	reparseConfigurationModels(): IWorkspaceConfigurationModels {
 		const parseOptions = { scopes: this.scopes, skipRestricted: this.isUntrusted() };
 		const shared = this.folderConfiguration.reparse(parseOptions);
 		const local = this.folderLocalConfiguration.reparse(parseOptions);
 		this.updateCache();
 		return { shared, local };
+	}
+
+	reparse(): ConfigurationModel {
+		return this.reparseConfigurationModels().shared;
 	}
 
 	getRestrictedSettings(): string[] {

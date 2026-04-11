@@ -2,69 +2,86 @@
 
 ## Intent
 
-Make the local workspace file family descriptor-first.
+Port the branch onto current `origin/main` and keep the feature first-class on the current tree.
 
-The branch already supports:
+The current upstream is not the tree this work started on. The branch now sits on a merged `origin/main` with newer configuration model APIs, newer preferences/editor infrastructure, newer extension recommendation plumbing, an `electron-browser` test layout, and a TS 6 / ES2024 toolchain.
 
-- `.vscode/settings.local.json`
-- `.vscode/tasks.local.json`
-- `.vscode/launch.local.json`
-- `.vscode/extensions.local.json`
-- `*.code-workspace.local` sections for `settings`, `tasks`, `launch`, and `extensions`
+The feature story stays the same:
 
-The remaining work is not new behavior first. It is shared structure first.
+- explicit `WORKSPACE_LOCAL` and `WORKSPACE_FOLDER_LOCAL` targets
+- explicit local files for the supported workspace file family
+- explicit provenance in inspect, read, write, and UI flows
 
-The code should describe the file family once, in one typed internal table, and let the existing readers, writers, and recommendation paths consume that description instead of each carrying partial filename and key knowledge.
+The implementation story must be updated to the current seams.
 
-## Constraints
+## Upstream Findings
 
-- keep shared state shared and local state local
-- keep provenance explicit in inspect, read, and write paths
-- keep workspace-folder membership derived only from the shared workspace file
-- keep `Local Workspace Settings` and `Local Folder Settings` wording unchanged
-- keep the extension manifest static; no code generation
-- optimize for upstream mergeability, not abstraction theater
+The upstream diff review on the touched paths showed four things that matter here:
+
+- configuration common and workbench configuration code now carry newer parser, inspect, and logging shapes; the port must fit those directly instead of preserving older helper contours
+- preferences command and editor registration changed materially; the local-target commands must be rethreaded through the current registration shape, not through older command blocks
+- extension recommendation tests and services now live on the `electron-browser` side and use newer test setup utilities
+- the current toolchain expects TS 6 semantics and `ES2024`; validation must use a current compiler, not the stale TS 5.2 binary from the old checkout
+
+## Decision
+
+Keep the current target model.
+
+The current upstream still does not provide a cleaner native seam than explicit `WORKSPACE_LOCAL` and `WORKSPACE_FOLDER_LOCAL` targets. The correct port is therefore not a retreat to overlays or disguised merged files. The correct port is to fit the existing first-class target model into the current upstream structure with less drift and fewer bespoke branches.
+
+The descriptor-first file-family refactor also still holds. The remaining work is to make the current upstream port compile, read cleanly, and validate on the new tree.
 
 ## Planned Work
 
-- completed with `src/vs/workbench/services/configuration/common/workspaceFileConfiguration.ts` as the canonical typed descriptor for `settings`, `tasks`, `launch`, and `extensions`
-- completed by deriving standalone workspace and folder-local resource knowledge from that descriptor
-- completed by rewiring workspace parser, folder loader, cache plumbing, and write routing to consume descriptor-backed helpers
-- completed by rewiring extension recommendation shared/local target discovery to consume the same descriptor-backed metadata
-- completed by mirroring the descriptor shape in `extensions/configuration-editing` runtime selectors without introducing a workbench-to-extension import edge
-- completed by adding a regression test that asserts the supported file family and its shared/local resource mapping
+1. Complete the current-upstream port cleanup after the merge.
+   Fix post-merge syntax and API drift in the current touched files, especially preferences command registration, configuration editing routing, extension recommendation test plumbing, and settings completion registration.
+
+2. Reconcile the local workspace file family with current upstream ownership boundaries.
+   Keep the canonical descriptor in workbench configuration common code and keep the extension runtime on a local mirror where a direct import would be a layering mistake.
+
+3. Re-run targeted validation on the current toolchain.
+   Use a current TS 6 compiler for source validation, rerun the focused source-level checks that still run cleanly on the merged tree, and use the built main checkout only where the browser harness is still required.
+
+4. Re-run the end passes on the current upstream base.
+   Re-do coherence, minimalism, and style/mergeability review after the port is stable, not by inheriting the old-base verdicts.
+
+5. Commit, push, wait for CI, and repair CI if needed.
 
 ## Validation
 
-Completed:
+In progress on the current upstream base.
 
-- `tsc -p extensions/configuration-editing/tsconfig.json --noEmit --pretty false`
-- `tsc -p src/tsconfig.json --noEmit --pretty false` with only the pre-existing `src/vs/platform/environment/test/node/argv.test.ts` failures at lines 116 and 146
-- focused unit/browser runs covering:
-  - descriptor regression tests
-  - local configuration editing writes
-  - local workspace and local folder configuration service behavior
-  - ext-host Local Workspace inspect behavior
-  - local extension recommendation prompts
-- configuration-editing integration suite with 18 passing tests
+Current signals:
+
+- the merge onto `origin/main` is complete
+- the upstream review is complete
+- the current-main code port is complete, including the post-merge syntax repairs and the current-tree cleanup that moved workbench configuration constants back onto the canonical descriptor module
+- the workbench-only constructor compatibility branch was removed; current callers in sessions and tests now pass explicit empty local models instead
+- `NODE_OPTIONS=--max-old-space-size=8192 ./node_modules/.bin/tsc -p src/tsconfig.json --noEmit --pretty false --skipLibCheck` passes
+- `./node_modules/.bin/tsc -p extensions/configuration-editing/tsconfig.json --noEmit --pretty false --skipLibCheck` passes
+- direct source-level mocha validation passes for the descriptor regression in `configurationModels.test.ts` and the Local Workspace inspect case in `extHostConfiguration.test.ts`
+- the browser-bound suites still require the real browser harness; the built-checkout runner is currently hanging silently here, and direct source-level mocha stops at missing browser globals for the configuration and recommendation suites
 
 ## Critique Pass 1: coherence
 
-Completed.
+Reopened.
 
-The file family is now described once and consumed in the loader, writer, parser, and recommendation paths. `extensions` no longer carries its own path matrix.
-This pass was rerun after the descriptor trim.
+Reran after the current-main port.
+
+The branch still tells one story across settings, tasks, launch, extensions, and `*.code-workspace.local`: local state is explicit, target-specific, and not collapsed into overlays. The one new upstream wrinkle is `mcp`, which belongs in the canonical descriptor as a user and shared-folder standalone configuration, but not in the local workspace file-family assertions. The regression test now checks both the full descriptor set and the local subset explicitly.
 
 ## Critique Pass 2: minimalism
 
-Completed.
+Reopened.
 
-The refactor removes the loose path maps and the repeated standalone-resource routing logic. A followup trim then removed descriptor fields that were only restating the key and path shape. It does not add a new service layer, code generation, or manifest synthesis.
-This pass was rerun after the descriptor trim.
+Reran after the current-main port.
+
+The worthwhile trim on the newer tree was to remove the workbench-only constructor compatibility branch and update the remaining older call sites directly. The other worthwhile trim was to stop shadowing descriptor-backed constants in `configuration.ts`. The platform-layer compatibility defaulting remains justified because current upstream still has old-form callers there.
 
 ## Critique Pass 3: style and mergeability
 
-Completed.
+Reopened.
 
-The extension manifest stayed static, the extension runtime kept a local helper instead of importing workbench internals, the main checkout stayed free of tracked changes after focused validation, and `git diff --check` is clean.
-This pass was rerun after the descriptor trim.
+Reran after the current-main port.
+
+The final current-tree cleanup keeps the diff on the current ownership lines: descriptor-backed constants live in the descriptor module, workbench call sites pass explicit local models, tests describe the local workspace subset separately from the wider descriptor set, and the merge-repair noise in preferences and completion registration has been reduced to straightforward syntax and import cleanup. The only remaining caveat is environmental: browser-harness validation is not yet reproducible in this shell despite the source-level passes and green typechecks.

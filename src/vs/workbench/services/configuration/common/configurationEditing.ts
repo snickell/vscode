@@ -704,14 +704,14 @@ export class ConfigurationEditing {
 				}
 			}
 
-			if (target === EditableConfigurationTarget.WORKSPACE_LOCAL) {
-				if (workbenchState === WorkbenchState.WORKSPACE && workspace.configuration) {
-					return getWorkspaceLocalConfigPath(workspace.configuration);
+				if (target === EditableConfigurationTarget.WORKSPACE_LOCAL) {
+					if (workbenchState === WorkbenchState.WORKSPACE && workspace.configuration) {
+						return getWorkspaceLocalConfigPath(workspace.configuration);
+					}
+					if (workbenchState === WorkbenchState.FOLDER) {
+						return workspace.folders[0].toResource(descriptor?.folderLocalPath ?? FOLDER_LOCAL_SETTINGS_PATH);
+					}
 				}
-				if (workbenchState === WorkbenchState.FOLDER) {
-					return workspace.folders[0].toResource(descriptor ? descriptor.folderLocalPath : FOLDER_LOCAL_SETTINGS_PATH);
-				}
-			}
 
 			if (target === EditableConfigurationTarget.WORKSPACE_FOLDER) {
 				if (resource) {
@@ -722,14 +722,14 @@ export class ConfigurationEditing {
 				}
 			}
 
-			if (target === EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
-				if (resource) {
-					const folder = this.contextService.getWorkspaceFolder(resource);
-					if (folder) {
-						return folder.toResource(descriptor ? descriptor.folderLocalPath : FOLDER_LOCAL_SETTINGS_PATH);
+				if (target === EditableConfigurationTarget.WORKSPACE_FOLDER_LOCAL) {
+					if (resource) {
+						const folder = this.contextService.getWorkspaceFolder(resource);
+						if (folder) {
+							return folder.toResource(descriptor?.folderLocalPath ?? FOLDER_LOCAL_SETTINGS_PATH);
+						}
 					}
 				}
-			}
 		}
 		return null;
 	}

@@ -362,8 +362,8 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 				args = typeof args === 'string' ? { query: args } : sanitizeOpenSettingsArgs(args);
 				return accessor.get(IPreferencesService).openWorkspaceSettings(args);
 			}
-		});
-		registerAction2(class extends Action2 {
+		}));
+		this._register(registerAction2(class extends Action2 {
 			constructor() {
 				super({
 					id: 'workbench.action.openWorkspaceLocalSettings',
@@ -379,7 +379,7 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 				args = typeof args === 'string' ? { query: args } : sanitizeOpenSettingsArgs(args);
 				return accessor.get(IPreferencesService).openWorkspaceLocalSettings(args);
 			}
-		});
+		}));
 
 		this._register(registerAction2(class extends Action2 {
 			constructor() {
@@ -430,8 +430,8 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 				args = sanitizeOpenSettingsArgs(args);
 				return accessor.get(IPreferencesService).openWorkspaceLocalSettings({ jsonEditor: true, ...args });
 			}
-		});
-		registerAction2(class extends Action2 {
+		}));
+		this._register(registerAction2(class extends Action2 {
 			constructor() {
 				super({
 					id: 'workbench.action.openFolderSettings',
@@ -474,8 +474,8 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 					await preferencesService.openFolderLocalSettings({ folderUri: workspaceFolder.uri, ...args });
 				}
 			}
-		});
-		registerAction2(class extends Action2 {
+		}));
+		this._register(registerAction2(class extends Action2 {
 			constructor() {
 				super({
 					id: 'workbench.action.openFolderSettingsFile',
@@ -518,8 +518,8 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 					await preferencesService.openFolderLocalSettings({ folderUri: workspaceFolder.uri, jsonEditor: true, ...args });
 				}
 			}
-		});
-		registerAction2(class extends Action2 {
+		}));
+		this._register(registerAction2(class extends Action2 {
 			constructor() {
 				super({
 					id: '_workbench.action.openFolderSettings',

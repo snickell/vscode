@@ -18,7 +18,7 @@
 - [x] Audit user-facing commands, tabs, tooltips, selectors, and setting-scope labels for target-first wording.
 - [x] Rename user-facing affordances to say `Local Workspace Settings` or `Local Folder Settings` where appropriate.
 - [x] Add or update platform, workbench, editing, ext-host, and configuration-editing tests for the upstream-aligned naming pass.
-- [x] Re-run validation for the naming pass.
+- [ ] Re-run validation for the naming pass.
 - [x] Refactor the shared and local workspace-file plumbing so settings, tasks, launch, and extensions can use the same first-class local mechanism.
 - [x] Load, watch, cache, and merge `.vscode/tasks.local.json`, `.vscode/launch.local.json`, and `.vscode/extensions.local.json`.
 - [x] Parse and merge `tasks`, `launch`, and `extensions` from `*.code-workspace.local`.
@@ -26,7 +26,7 @@
 - [x] Extend inspect and effective-value behavior for the supported local workspace file family.
 - [x] Extend schema, editor-association, and completion registration across the local workspace file family.
 - [x] Add or update focused tests for local tasks, launch, and extensions across folder and saved workspaces.
-- [x] Re-run validation for the local workspace file family pass.
+- [ ] Re-run validation for the local workspace file family pass.
 - [x] Rewrite `PLAN.md` around the canonical local workspace file-family descriptor refactor.
 - [x] Update `AGENTS.md` so restart context names the descriptor-first pass.
 - [x] Introduce one typed canonical descriptor for `settings`, `tasks`, `launch`, and `extensions`.
@@ -36,38 +36,54 @@
 - [x] Rewire workspace extension recommendation shared/local target enumeration to use the descriptor-backed metadata.
 - [x] Reuse the descriptor shape in `extensions/configuration-editing` runtime selectors or helper tables where practical.
 - [x] Add a regression test for the canonical descriptor and adjust focused tests if the refactor changes assertions.
-- [x] Re-run the focused compile and test set for the descriptor-first pass.
-- [x] Critique pass 1: coherence.
-- [x] Critique pass 2: minimalism.
-- [x] Critique pass 3: style and mergeability.
+- [ ] Re-run the focused compile and test set for the descriptor-first pass.
+- [ ] Critique pass 1: coherence.
+- [ ] Critique pass 2: minimalism.
+- [ ] Critique pass 3: style and mergeability.
 
 ## Reviewer Followup
 
 - [x] Fill the remaining schema/completion/editor-association gaps for local workspace and local folder settings files.
-- [x] Re-run the focused compile and test set after the local workspace file family changes.
+- [ ] Re-run the focused compile and test set after the local workspace file family changes.
 
 ## Descriptor Trim
 
-- [x] Remove descriptor fields that were not pulling real weight after the descriptor-first refactor.
-- [x] Simplify the extension-side selector mirror without giving up the shared file-family shape.
-- [x] Re-run the focused compile and test set after the trim pass.
+- [ ] Remove descriptor fields that were not pulling real weight after the descriptor-first refactor.
+- [ ] Simplify the extension-side selector mirror without giving up the shared file-family shape.
+- [ ] Re-run the focused compile and test set after the trim pass.
 
 ## Reopened After Trim
 
-- [x] Re-run the focused compile and test set for the descriptor-first pass after the trim.
-- [x] Re-run critique pass 1: coherence, after the trim.
-- [x] Re-run critique pass 2: minimalism, after the trim.
-- [x] Re-run critique pass 3: style and mergeability, after the trim.
+- [ ] Re-run the focused compile and test set for the descriptor-first pass after the trim.
+- [ ] Re-run critique pass 1: coherence, after the trim.
+- [ ] Re-run critique pass 2: minimalism, after the trim.
+- [ ] Re-run critique pass 3: style and mergeability, after the trim.
 
 ## Checklist Rerun
 
 - [x] Re-run the focused typecheck set on the current worktree.
-- [x] Re-run the focused browser and integration tests on the current implementation.
+- [ ] Re-run the focused browser and integration tests on the current implementation.
 - [x] Re-check coherence, minimalism, and mergeability after the rerun.
 
 ## Tasteful Polish
 
-- [x] Trim small bits of repetition in the descriptor helper without changing the file-family shape.
-- [x] Make the extension recommendation target enumeration read a little cleaner.
-- [x] Make the configuration-editing selector and completion helpers a little plainer.
-- [x] Re-run the focused validation slice after the polish pass.
+- [ ] Trim small bits of repetition in the descriptor helper without changing the file-family shape.
+- [ ] Make the extension recommendation target enumeration read a little cleaner.
+- [ ] Make the configuration-editing selector and completion helpers a little plainer.
+- [ ] Re-run the focused validation slice after the polish pass.
+
+## Upstream Port to Current Main
+
+- [x] Bring the branch onto current `origin/main`.
+- [x] Inspect the upstream diff in the relevant configuration, preferences, extensions, and configuration-editing paths.
+- [x] Port or rewrite the code on that base.
+- [ ] Commit the result.
+- [ ] Push the branch.
+- [ ] Wait for CI.
+- [ ] Fix CI if it fails.
+
+## Current-Main Validation
+
+- [x] Re-run the current-main source typecheck with the current TS 6 toolchain.
+- [x] Re-run the direct source-level descriptor regression and Local Workspace ext-host inspect checks.
+- [ ] Re-run the browser-bound configuration and recommendation slices on the current-main base.

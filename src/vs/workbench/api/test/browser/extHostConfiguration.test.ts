@@ -687,9 +687,10 @@ suite('ExtHostConfiguration', function () {
 				}),
 				policy: new ConfigurationModel(),
 				application: new ConfigurationModel(),
-				user: toConfigurationModel({
+				userLocal: toConfigurationModel({
 					'editor.wordWrap': 'user'
 				}),
+				userRemote: new ConfigurationModel(),
 				workspace: toConfigurationModel({
 					'editor.wordWrap': 'workspace',
 					'[typescript]': {

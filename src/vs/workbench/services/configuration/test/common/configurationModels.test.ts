@@ -13,7 +13,7 @@ import { URI } from '../../../../../base/common/uri.js';
 import { Workspace } from '../../../../../platform/workspace/test/common/testWorkspace.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { NullLogService } from '../../../../../platform/log/common/log.js';
-import { LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS, WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS } from '../../common/workspaceFileConfiguration.js';
+import { LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS, LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS, WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS } from '../../common/workspaceFileConfiguration.js';
 
 suite('FolderSettingsModelParser', () => {
 
@@ -151,17 +151,25 @@ suite('Workspace File Configurations', () => {
 	test('canonical descriptor enumerates supported file family', () => {
 		assert.deepStrictEqual(
 			WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key),
+			['settings', 'tasks', 'launch', 'extensions', 'mcp']
+		);
+		assert.deepStrictEqual(
+			LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key),
 			['settings', 'tasks', 'launch', 'extensions']
 		);
 		assert.deepStrictEqual(
 			WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key),
+			['tasks', 'launch', 'extensions', 'mcp']
+		);
+		assert.deepStrictEqual(
+			LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key),
 			['tasks', 'launch', 'extensions']
 		);
 	});
 
 	test('canonical descriptor yields expected workspace sections and folder paths', () => {
 		assert.deepStrictEqual(
-			WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.map(descriptor => ({
+			LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.map(descriptor => ({
 				key: descriptor.key,
 				shared: descriptor.folderSharedPath,
 				local: descriptor.folderLocalPath,
@@ -195,14 +203,14 @@ suite('Workspace Configuration', () => {
 
 	test('Test compare same configurations', () => {
 		const workspace = new Workspace('a', [new WorkspaceFolder({ index: 0, name: 'a', uri: URI.file('folder1') }), new WorkspaceFolder({ index: 1, name: 'b', uri: URI.file('folder2') }), new WorkspaceFolder({ index: 2, name: 'c', uri: URI.file('folder3') })]);
-		const configuration1 = new Configuration(ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), workspace, new NullLogService());
+		const configuration1 = new Configuration(ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), workspace, ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), new NullLogService());
 		configuration1.updateDefaultConfiguration(defaultConfigurationModel);
 		configuration1.updateLocalUserConfiguration(toConfigurationModel({ 'window.title': 'native', '[typescript]': { 'editor.insertSpaces': false } }));
 		configuration1.updateWorkspaceConfiguration(toConfigurationModel({ 'editor.lineNumbers': 'on' }));
 		configuration1.updateFolderConfiguration(URI.file('folder1'), toConfigurationModel({ 'editor.fontSize': 14 }));
 		configuration1.updateFolderConfiguration(URI.file('folder2'), toConfigurationModel({ 'editor.wordWrap': 'on' }));
 
-		const configuration2 = new Configuration(ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), workspace, new NullLogService());
+		const configuration2 = new Configuration(ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), workspace, ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), new NullLogService());
 		configuration2.updateDefaultConfiguration(defaultConfigurationModel);
 		configuration2.updateLocalUserConfiguration(toConfigurationModel({ 'window.title': 'native', '[typescript]': { 'editor.insertSpaces': false } }));
 		configuration2.updateWorkspaceConfiguration(toConfigurationModel({ 'editor.lineNumbers': 'on' }));
@@ -216,14 +224,14 @@ suite('Workspace Configuration', () => {
 
 	test('Test compare different configurations', () => {
 		const workspace = new Workspace('a', [new WorkspaceFolder({ index: 0, name: 'a', uri: URI.file('folder1') }), new WorkspaceFolder({ index: 1, name: 'b', uri: URI.file('folder2') }), new WorkspaceFolder({ index: 2, name: 'c', uri: URI.file('folder3') })]);
-		const configuration1 = new Configuration(ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), workspace, new NullLogService());
+		const configuration1 = new Configuration(ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), workspace, ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), new NullLogService());
 		configuration1.updateDefaultConfiguration(defaultConfigurationModel);
 		configuration1.updateLocalUserConfiguration(toConfigurationModel({ 'window.title': 'native', '[typescript]': { 'editor.insertSpaces': false } }));
 		configuration1.updateWorkspaceConfiguration(toConfigurationModel({ 'editor.lineNumbers': 'on' }));
 		configuration1.updateFolderConfiguration(URI.file('folder1'), toConfigurationModel({ 'editor.fontSize': 14 }));
 		configuration1.updateFolderConfiguration(URI.file('folder2'), toConfigurationModel({ 'editor.wordWrap': 'on' }));
 
-		const configuration2 = new Configuration(ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), workspace, new NullLogService());
+		const configuration2 = new Configuration(ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), workspace, ConfigurationModel.createEmptyModel(new NullLogService()), new ResourceMap<ConfigurationModel>(), new NullLogService());
 		configuration2.updateDefaultConfiguration(defaultConfigurationModel);
 		configuration2.updateLocalUserConfiguration(toConfigurationModel({ 'workbench.enableTabs': true, '[typescript]': { 'editor.insertSpaces': true } }));
 		configuration2.updateWorkspaceConfiguration(toConfigurationModel({ 'editor.fontSize': 11 }));

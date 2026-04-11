@@ -22,6 +22,7 @@ export const SETTINGS_CONFIGURATION_KEY = 'settings';
 export const TASKS_CONFIGURATION_KEY = 'tasks';
 export const LAUNCH_CONFIGURATION_KEY = 'launch';
 export const EXTENSIONS_CONFIGURATION_KEY = 'extensions';
+export const MCP_CONFIGURATION_KEY = 'mcp';
 
 export const TASKS_DEFAULT = '{\n\t\"version\": \"2.0.0\",\n\t\"tasks\": []\n}';
 
@@ -29,54 +30,74 @@ export type WorkspaceFileConfigurationKey =
 	| typeof SETTINGS_CONFIGURATION_KEY
 	| typeof TASKS_CONFIGURATION_KEY
 	| typeof LAUNCH_CONFIGURATION_KEY
-	| typeof EXTENSIONS_CONFIGURATION_KEY;
+	| typeof EXTENSIONS_CONFIGURATION_KEY
+	| typeof MCP_CONFIGURATION_KEY;
+
 type StandaloneWorkspaceFileConfigurationKey = Exclude<WorkspaceFileConfigurationKey, typeof SETTINGS_CONFIGURATION_KEY>;
 
 export type WorkspaceFileConfigurationFolderType = 'settings' | 'standalone';
 
 export interface IWorkspaceFileConfigurationDescriptor {
 	readonly key: WorkspaceFileConfigurationKey;
+	readonly workspaceSection?: string;
 	readonly folderSharedPath: string;
-	readonly folderLocalPath: string;
+	readonly folderLocalPath?: string;
 	readonly folderType: WorkspaceFileConfigurationFolderType;
 	readonly userStandalonePath?: string;
 }
 
-function createStandaloneDescriptor(key: StandaloneWorkspaceFileConfigurationKey, userStandalonePath?: string): IWorkspaceFileConfigurationDescriptor {
-	if (userStandalonePath) {
-		return {
-			key,
-			folderSharedPath: `${FOLDER_CONFIG_FOLDER_NAME}/${key}.json`,
-			folderLocalPath: `${FOLDER_CONFIG_FOLDER_NAME}/${key}.local.json`,
-			folderType: 'standalone',
-			userStandalonePath,
-		};
-	}
+function createStandaloneDescriptor(
+	key: StandaloneWorkspaceFileConfigurationKey,
+	options: { workspaceSection?: string; folderLocalPath?: string; userStandalonePath?: string } = {}
+): IWorkspaceFileConfigurationDescriptor {
 	return {
 		key,
+		workspaceSection: options.workspaceSection,
 		folderSharedPath: `${FOLDER_CONFIG_FOLDER_NAME}/${key}.json`,
-		folderLocalPath: `${FOLDER_CONFIG_FOLDER_NAME}/${key}.local.json`,
+		folderLocalPath: options.folderLocalPath,
 		folderType: 'standalone',
+		userStandalonePath: options.userStandalonePath,
 	};
 }
 
 export const WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS: readonly IWorkspaceFileConfigurationDescriptor[] = [
 	{
 		key: SETTINGS_CONFIGURATION_KEY,
+		workspaceSection: SETTINGS_CONFIGURATION_KEY,
 		folderSharedPath: FOLDER_SETTINGS_PATH,
 		folderLocalPath: FOLDER_LOCAL_SETTINGS_PATH,
 		folderType: 'settings',
 	},
-	createStandaloneDescriptor(TASKS_CONFIGURATION_KEY, `${TASKS_CONFIGURATION_KEY}.json`),
-	createStandaloneDescriptor(LAUNCH_CONFIGURATION_KEY),
-	createStandaloneDescriptor(EXTENSIONS_CONFIGURATION_KEY),
+	createStandaloneDescriptor(TASKS_CONFIGURATION_KEY, {
+		workspaceSection: TASKS_CONFIGURATION_KEY,
+		folderLocalPath: `${FOLDER_CONFIG_FOLDER_NAME}/${TASKS_CONFIGURATION_KEY}.local.json`,
+		userStandalonePath: `${TASKS_CONFIGURATION_KEY}.json`,
+	}),
+	createStandaloneDescriptor(LAUNCH_CONFIGURATION_KEY, {
+		workspaceSection: LAUNCH_CONFIGURATION_KEY,
+		folderLocalPath: `${FOLDER_CONFIG_FOLDER_NAME}/${LAUNCH_CONFIGURATION_KEY}.local.json`,
+	}),
+	createStandaloneDescriptor(EXTENSIONS_CONFIGURATION_KEY, {
+		workspaceSection: EXTENSIONS_CONFIGURATION_KEY,
+		folderLocalPath: `${FOLDER_CONFIG_FOLDER_NAME}/${EXTENSIONS_CONFIGURATION_KEY}.local.json`,
+	}),
+	createStandaloneDescriptor(MCP_CONFIGURATION_KEY, {
+		userStandalonePath: `${MCP_CONFIGURATION_KEY}.json`,
+	}),
 ] as const;
 
+export const WORKSPACE_FILE_SECTION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => !!descriptor.workspaceSection);
+export const LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => !!descriptor.folderLocalPath);
 export const WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => descriptor.folderType === 'standalone');
-export const USER_STANDALONE_CONFIGURATION_DESCRIPTORS = WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => !!descriptor.userStandalonePath);
+export const LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS = LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.filter(descriptor => descriptor.folderType === 'standalone');
+export const USER_STANDALONE_CONFIGURATION_DESCRIPTORS = WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.filter(descriptor => !!descriptor.userStandalonePath);
 export const WORKSPACE_STANDALONE_CONFIGURATION_KEYS = WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key);
+export const LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_KEYS = LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS.map(descriptor => descriptor.key);
 
-function toConfigurationPathMap(descriptors: readonly IWorkspaceFileConfigurationDescriptor[], pathKey: 'folderSharedPath' | 'folderLocalPath' | 'userStandalonePath'): Record<string, string> {
+function toConfigurationPathMap(
+	descriptors: readonly IWorkspaceFileConfigurationDescriptor[],
+	pathKey: 'folderSharedPath' | 'folderLocalPath' | 'userStandalonePath'
+): Record<string, string> {
 	const result: Record<string, string> = Object.create(null);
 	for (const descriptor of descriptors) {
 		const path = descriptor[pathKey];
@@ -88,9 +109,13 @@ function toConfigurationPathMap(descriptors: readonly IWorkspaceFileConfiguratio
 }
 
 export const WORKSPACE_STANDALONE_CONFIGURATIONS = toConfigurationPathMap(WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, 'folderSharedPath');
-export const FOLDER_LOCAL_STANDALONE_CONFIGURATIONS = toConfigurationPathMap(WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, 'folderLocalPath');
+export const FOLDER_LOCAL_STANDALONE_CONFIGURATIONS = toConfigurationPathMap(LOCAL_WORKSPACE_STANDALONE_CONFIGURATION_DESCRIPTORS, 'folderLocalPath');
 export const USER_STANDALONE_CONFIGURATIONS = toConfigurationPathMap(USER_STANDALONE_CONFIGURATION_DESCRIPTORS, 'userStandalonePath');
 
 export function getWorkspaceFileConfigurationDescriptor(key: string): IWorkspaceFileConfigurationDescriptor | undefined {
 	return WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.find(descriptor => descriptor.key === key);
+}
+
+export function getLocalWorkspaceFileConfigurationDescriptor(key: string): IWorkspaceFileConfigurationDescriptor | undefined {
+	return LOCAL_WORKSPACE_FILE_CONFIGURATION_DESCRIPTORS.find(descriptor => descriptor.key === key);
 }

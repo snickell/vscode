@@ -26,7 +26,6 @@ export class ExtensionsCompletionItemsProvider extends Disposable implements IWo
 		this._register(languageFeaturesService.completionProvider.register([
 			{ language: 'jsonc', pattern: '**/settings.json' },
 			{ language: 'jsonc', pattern: '**/settings.local.json' },
-			_debugDisplayName: 'extensionsCompletionProvider',
 		], {
 			_debugDisplayName: 'extensionsCompletionProvider',
 			provideCompletionItems: async (model: ITextModel, position: Position, _context: CompletionContext, token: CancellationToken): Promise<CompletionList> => {

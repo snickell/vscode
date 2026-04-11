@@ -12,7 +12,6 @@ import { URI } from '../../../../base/common/uri.js';
 import { CoreEditingCommands } from '../../../../editor/browser/coreCommands.js';
 import { getCodeEditor, ICodeEditor } from '../../../../editor/browser/editorBrowser.js';
 import { IPosition } from '../../../../editor/common/core/position.js';
-import { ITextModel } from '../../../../editor/common/model.js';
 import { IModelService } from '../../../../editor/common/services/model.js';
 import { ITextModelService } from '../../../../editor/common/services/resolverService.js';
 import * as nls from '../../../../nls.js';

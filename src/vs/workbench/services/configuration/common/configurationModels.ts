@@ -116,6 +116,8 @@ export class StandaloneConfigurationModelParser extends ConfigurationModelParser
 
 export class Configuration extends BaseConfiguration {
 
+	private readonly _workspace: Workspace | undefined;
+
 	constructor(
 		defaults: ConfigurationModel,
 		policy: ConfigurationModel,
@@ -126,12 +128,13 @@ export class Configuration extends BaseConfiguration {
 		folders: ResourceMap<ConfigurationModel>,
 		memoryConfiguration: ConfigurationModel,
 		memoryConfigurationByResource: ResourceMap<ConfigurationModel>,
-		private readonly _workspace: Workspace | undefined,
+		workspace: Workspace | undefined,
 		workspaceLocalConfiguration: ConfigurationModel,
 		folderLocalConfigurations: ResourceMap<ConfigurationModel>,
 		logService: ILogService
 	) {
 		super(defaults, policy, application, localUser, remoteUser, workspaceConfiguration, folders, memoryConfiguration, memoryConfigurationByResource, workspaceLocalConfiguration, folderLocalConfigurations, logService);
+		this._workspace = workspace;
 	}
 
 	override getValue(key: string | undefined, overrides: IConfigurationOverrides = {}): unknown {

@@ -82,6 +82,8 @@ export class ConfigurationService extends Disposable implements IWorkbenchConfig
 			ConfigurationModel.createEmptyModel(logService),
 			new ResourceMap<ConfigurationModel>(),
 			this.workspaceService.getWorkspace() as Workspace,
+			ConfigurationModel.createEmptyModel(logService),
+			new ResourceMap<ConfigurationModel>(),
 			this.logService
 		);
 
@@ -110,6 +112,8 @@ export class ConfigurationService extends Disposable implements IWorkbenchConfig
 			ConfigurationModel.createEmptyModel(this.logService),
 			new ResourceMap<ConfigurationModel>(),
 			workspace,
+			ConfigurationModel.createEmptyModel(this.logService),
+			new ResourceMap<ConfigurationModel>(),
 			this.logService
 		);
 		await this.loadFolderConfigurations(workspace.folders);
